@@ -1,6 +1,6 @@
-# Modern Geckos — Visual Card & Template Editor
+# Card-editor — Visual Card & Template Editor
 
-**Modern Geckos** is a client-side web application for designing custom game cards and reusable templates for tabletop RPGs, board games, and card games. Inspired by [Gulix/geckos](https://github.com/gulix/geckos), it is built with **React 19, TypeScript, Vite, and Konva** and runs entirely in the browser with zero backend required.
+**Card-editor** is a client-side web application for designing custom game cards and reusable templates for tabletop RPGs, board games, and card games. Inspired by [Gulix/geckos](https://github.com/gulix/geckos), it is built with **React 19, TypeScript, Vite, and Konva** and runs entirely in the browser with zero backend required.
 
 ---
 
