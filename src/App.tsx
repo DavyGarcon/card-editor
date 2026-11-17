@@ -1,0 +1,1179 @@
+import React, { useState, useRef, useMemo } from 'react';
+import { Stage, Layer, Rect } from 'react-konva';
+import Konva from 'konva';
+import {
+  Download,
+  Upload,
+  Plus,
+  Trash2,
+  Layers,
+  LayoutTemplate,
+  PenTool,
+  Type,
+  Square,
+  List,
+  Image as ImageIcon,
+  FileJson,
+  GitBranch,
+  AlertCircle,
+} from 'lucide-react';
+import {
+  CardData,
+  CardStyleDefinition,
+  CardTemplatePack,
+  FieldType,
+  SelectOption,
+  TemplateField,
+} from './types/template';
+import { resolveCardStyle } from './utils/styleResolver';
+import { evaluateFieldScript } from './utils/scriptEvaluator';
+import { DraggableFieldNode } from './components/DraggableFieldNode';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { Line } from 'react-konva';
+import {
+  getLineGuideStops,
+  getObjectSnappingEdges,
+  getGuides,
+  GuideLineRender,
+} from './utils/snapGuides';
+import { Printer } from 'lucide-react';
+import { exportDeckToPdf } from './utils/pdfExporter';
+
+const INITIAL_PACK: CardTemplatePack = {
+  name: 'Pack RPG Héritiers',
+  activeStyleKey: 'spell_fire',
+  styles: [
+    {
+      key: 'base_spell',
+      name: 'Sort (Base)',
+      width: 375,
+      height: 525,
+      backgroundColor: '#1e293b',
+      borderColor: '#64748b',
+      fields: [
+        {
+          id: 'title',
+          label: 'Nom du Sort',
+          type: 'text',
+          x: 28,
+          y: 26,
+          width: 319,
+          height: 36,
+          fontSize: 24,
+          color: '#f8fafc',
+          align: 'center',
+          defaultValue: 'Sortilège',
+        },
+        {
+          id: 'school',
+          label: 'École de Magie',
+          type: 'select',
+          x: 28,
+          y: 64,
+          width: 319,
+          height: 24,
+          fontSize: 14,
+          color: '#94a3b8',
+          align: 'center',
+          defaultValue: 'evocation',
+          options: [
+            { value: 'evocation', label: 'Évocation' },
+            { value: 'illusion', label: 'Illusion' },
+            { value: 'abjuration', label: 'Abjuration' },
+            { value: 'necromancy', label: 'Nécromancie' },
+          ],
+        },
+        {
+          id: 'artwork',
+          label: 'Illustration',
+          type: 'image',
+          x: 32,
+          y: 98,
+          width: 311,
+          height: 155,
+          opacity: 1,
+        },
+        {
+          id: 'rules',
+          label: 'Description des effets',
+          type: 'text',
+          x: 32,
+          y: 270,
+          width: 311,
+          height: 170,
+          fontSize: 15,
+          color: '#f1f5f9',
+          align: 'left',
+          defaultValue: 'Décrivez les effets du sort ici.',
+        },
+        {
+          id: 'rarity_badge',
+          label: 'Rareté',
+          type: 'select',
+          x: 32,
+          y: 465,
+          width: 311,
+          height: 28,
+          fontSize: 13,
+          color: '#fbbf24',
+          align: 'center',
+          defaultValue: 'common',
+          options: [
+            { value: 'common', label: 'Sort Commun' },
+            { value: 'rare', label: 'Sort Rare' },
+            { value: 'legendary', label: 'Sort Légendaire' },
+          ],
+          script: `return {
+  color: card.rarity_badge === 'legendary' ? '#f59e0b' : card.rarity_badge === 'rare' ? '#38bdf8' : '#94a3b8'
+};`,
+        },
+      ],
+    },
+    {
+      key: 'spell_fire',
+      name: 'Sort de Feu (Hérite de Base)',
+      basedOn: 'base_spell',
+      backgroundColor: '#29130d',
+      borderColor: '#f59e0b',
+      fields: [
+        {
+          id: 'title',
+          label: 'Nom du Sort',
+          type: 'text',
+          x: 28,
+          y: 26,
+          width: 319,
+          height: 36,
+          fontSize: 24,
+          color: '#fbbf24',
+          align: 'center',
+        },
+      ],
+    },
+  ],
+};
+
+export default function App() {
+  const [pack, setPack] = useState<CardTemplatePack>(INITIAL_PACK);
+  const [activeStyleKey, setActiveStyleKey] = useState<string>(INITIAL_PACK.activeStyleKey || 'spell_fire');
+  const [mode, setMode] = useState<'card' | 'template'>('card');
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>('title');
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+
+  const [cards, setCards] = useState<CardData[]>([
+    {
+      id: '1',
+      styleKey: 'spell_fire',
+      values: {
+        title: 'Boule de Feu',
+        school: 'evocation',
+        rules: 'Un trait lumineux jaillit de votre index vers un point choisi à portée et explose dans un rugissement de flammes.',
+        rarity_badge: 'rare',
+      },
+    },
+  ]);
+  const [activeCardId, setActiveCardId] = useState<string>('1');
+  const stageRef = useRef<Konva.Stage>(null);
+
+  const activeCard = cards.find((c) => c.id === activeCardId) || cards[0];
+  const currentStyleKey = mode === 'card' && activeCard ? activeCard.styleKey : activeStyleKey;
+
+  const resolvedStyle = useMemo(() => {
+    try {
+      setErrorBanner(null);
+      return resolveCardStyle(currentStyleKey, pack.styles);
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'Erreur de résolution du style');
+      return resolveCardStyle(pack.styles[0]?.key || 'base_spell', pack.styles.filter((s) => !s.basedOn));
+    }
+  }, [currentStyleKey, pack.styles]);
+
+  const rawActiveStyle = pack.styles.find((s) => s.key === currentStyleKey) || pack.styles[0];
+  const selectedField = resolvedStyle.fields.find((f) => f.id === selectedFieldId) || null;
+  const isFieldInheritedOnly = Boolean(
+    selectedField &&
+      rawActiveStyle?.basedOn &&
+      !rawActiveStyle.fields.some((f) => f.id === selectedField.id)
+  );
+
+  const selectedFieldScriptError = useMemo(() => {
+    if (!selectedField?.script) return null;
+    const res = evaluateFieldScript(selectedField.script, {
+      card: activeCard?.values || {},
+      style: resolvedStyle as unknown as Record<string, unknown>,
+      field: selectedField as unknown as Record<string, unknown>,
+    });
+    return res.error || null;
+  }, [selectedField, activeCard, resolvedStyle]);
+
+  // --- Style & Inheritance Management ---
+  const createStyleVariant = (inheritFromCurrent: boolean) => {
+    const newKey = `style_${Date.now()}`;
+    const newStyle: CardStyleDefinition = inheritFromCurrent
+      ? {
+          key: newKey,
+          name: `${resolvedStyle.name} (Variante)`,
+          basedOn: resolvedStyle.key,
+          fields: [],
+        }
+      : {
+          key: newKey,
+          name: 'Nouveau Style Vierge',
+          width: 375,
+          height: 525,
+          backgroundColor: '#1e293b',
+          borderColor: '#38bdf8',
+          fields: [
+            {
+              id: 'title',
+              label: 'Titre',
+              type: 'text',
+              x: 30,
+              y: 30,
+              width: 315,
+              height: 36,
+              fontSize: 22,
+              color: '#ffffff',
+              align: 'center',
+            },
+          ],
+        };
+
+    setPack((prev) => ({ ...prev, styles: [...prev.styles, newStyle] }));
+    setActiveStyleKey(newKey);
+    if (activeCard) {
+      setCards((prev) => prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: newKey } : c)));
+    }
+  };
+
+  const updateActiveStyleMeta = (updates: Partial<CardStyleDefinition>) => {
+    setPack((prev) => ({
+      ...prev,
+      styles: prev.styles.map((s) => (s.key === currentStyleKey ? { ...s, ...updates } : s)),
+    }));
+  };
+
+  const updateFieldProps = (fieldId: string, updates: Partial<TemplateField>) => {
+    setPack((prev) => ({
+      ...prev,
+      styles: prev.styles.map((s) => {
+        if (s.key !== currentStyleKey) return s;
+        const existsLocally = s.fields.some((f) => f.id === fieldId);
+        if (existsLocally) {
+          return {
+            ...s,
+            fields: s.fields.map((f) => (f.id === fieldId ? { ...f, ...updates } : f)),
+          };
+        }
+        // Override inherited field locally in child style
+        const baseField = resolvedStyle.fields.find((f) => f.id === fieldId);
+        if (!baseField) return s;
+        return {
+          ...s,
+          fields: [...s.fields, { ...baseField, ...updates }],
+        };
+      }),
+    }));
+  };
+
+  const addTemplateField = (type: FieldType) => {
+    const newId = `field_${Date.now()}`;
+    const baseLabels: Record<FieldType, string> = {
+      text: 'Nouveau Texte',
+      box: 'Nouveau Cadre',
+      select: 'Liste Déroulante',
+      image: 'Illustration',
+    };
+    const newField: TemplateField = {
+      id: newId,
+      label: baseLabels[type],
+      type,
+      x: 45,
+      y: 160,
+      width: 260,
+      height: type === 'image' ? 140 : type === 'box' ? 90 : 38,
+      fontSize: 16,
+      color: type === 'box' ? '#475569' : '#ffffff',
+      fill: '#0f172a',
+      align: 'left',
+      opacity: 1,
+      ...(type === 'select'
+        ? {
+            defaultValue: 'opt1',
+            options: [
+              { value: 'opt1', label: 'Option 1' },
+              { value: 'opt2', label: 'Option 2' },
+            ],
+          }
+        : {}),
+    };
+
+    setPack((prev) => ({
+      ...prev,
+      styles: prev.styles.map((s) =>
+        s.key === currentStyleKey ? { ...s, fields: [...s.fields, newField] } : s
+      ),
+    }));
+    setSelectedFieldId(newId);
+  };
+
+  const deleteOrRevertField = (fieldId: string) => {
+    setPack((prev) => ({
+      ...prev,
+      styles: prev.styles.map((s) =>
+        s.key === currentStyleKey ? { ...s, fields: s.fields.filter((f) => f.id !== fieldId) } : s
+      ),
+    }));
+    if (selectedFieldId === fieldId) setSelectedFieldId(null);
+  };
+
+  // --- Select Options Editor Helpers ---
+  const updateSelectOption = (field: TemplateField, idx: number, key: keyof SelectOption, val: string) => {
+    const nextOptions = [...(field.options || [])];
+    nextOptions[idx] = { ...nextOptions[idx], [key]: val };
+    updateFieldProps(field.id, { options: nextOptions });
+  };
+
+  const addSelectOption = (field: TemplateField) => {
+    const nextOptions = [
+      ...(field.options || []),
+      { value: `opt_${Date.now()}`, label: 'Nouvelle option' },
+    ];
+    updateFieldProps(field.id, { options: nextOptions });
+  };
+
+  const removeSelectOption = (field: TemplateField, idx: number) => {
+    const nextOptions = (field.options || []).filter((_, i) => i !== idx);
+    updateFieldProps(field.id, { options: nextOptions });
+  };
+
+  // --- Card Values & Image Upload ---
+  const updateCardValue = (fieldId: string, value: string) => {
+    setCards((prev) =>
+      prev.map((c) => (c.id === activeCard.id ? { ...c, values: { ...c.values, [fieldId]: value } } : c))
+    );
+  };
+
+  const handleCardImageUpload = (fieldId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        updateCardValue(fieldId, reader.result);
+      }
+    };
+    reader.onerror = () => setErrorBanner("Impossible de lire le fichier image.");
+    reader.readAsDataURL(file);
+  };
+
+  const addNewCard = () => {
+    const newId = Date.now().toString();
+    setCards([
+      ...cards,
+      { id: newId, styleKey: currentStyleKey, values: { title: 'Nouvelle Carte' } },
+    ]);
+    setActiveCardId(newId);
+  };
+
+  // --- Export / Import ---
+  const exportPNG = () => {
+    try {
+      setSelectedFieldId(null);
+      setTimeout(() => {
+        if (!stageRef.current) return;
+        const uri = stageRef.current.toDataURL({ pixelRatio: 2 });
+        const link = document.createElement('a');
+        link.download = `${activeCard.values.title || 'carte'}.png`;
+        link.href = uri;
+        link.click();
+      }, 60);
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export PNG.");
+    }
+  };
+
+  const exportPackJSON = () => {
+    try {
+      const payload: CardTemplatePack = { ...pack, activeStyleKey: currentStyleKey };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.download = `${pack.name.toLowerCase().replace(/\s+/g, '-')}.json`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export JSON.");
+    }
+  };
+
+  const importPackJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string);
+        // Support both multi-style Pack format and single-style legacy format
+        if (Array.isArray(parsed.styles) && parsed.styles.length > 0) {
+          setPack(parsed);
+          const firstKey = parsed.activeStyleKey || parsed.styles[0].key;
+          setActiveStyleKey(firstKey);
+          if (activeCard) {
+            setCards((prev) =>
+              prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: firstKey } : c))
+            );
+          }
+        } else if (Array.isArray(parsed.fields)) {
+          const singlePack: CardTemplatePack = {
+            name: parsed.name || 'Template Importé',
+            activeStyleKey: 'default',
+            styles: [{ key: 'default', name: parsed.name || 'Défaut', ...parsed }],
+          };
+          setPack(singlePack);
+          setActiveStyleKey('default');
+        } else {
+          throw new Error('Format JSON non reconnu.');
+        }
+        setErrorBanner(null);
+      } catch (err) {
+        setErrorBanner(err instanceof Error ? err.message : 'Fichier JSON invalide.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+    // Dans le composant App :
+    const [guides, setGuides] = useState<GuideLineRender[]>([]);
+
+    const handleLayerDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+      if (mode !== 'template') return;
+      const stage = e.target.getStage();
+      if (!stage) return;
+
+      const lineGuideStops = getLineGuideStops(e.target, stage, resolvedStyle.width, resolvedStyle.height);
+      const itemBounds = getObjectSnappingEdges(e.target, stage);
+      const activeGuides = getGuides(lineGuideStops, itemBounds);
+
+      if (activeGuides.length === 0) {
+        setGuides([]);
+        return;
+      }
+
+      const absPos = e.target.absolutePosition();
+
+      // Applique la correction magnétique sur X et Y
+      activeGuides.forEach((lg) => {
+        if (lg.orientation === 'V') {
+          const edge = itemBounds.vertical.find((b) => b.snap === lg.snap);
+          if (edge) absPos.x = lg.lineGuide + edge.offset;
+        } else if (lg.orientation === 'H') {
+          const edge = itemBounds.horizontal.find((b) => b.snap === lg.snap);
+          if (edge) absPos.y = lg.lineGuide + edge.offset;
+        }
+      });
+
+      e.target.absolutePosition(absPos);
+
+      setGuides(
+        activeGuides.map((g) => ({
+          orientation: g.orientation,
+          position: g.lineGuide,
+        }))
+      );
+    };
+
+    const handleLayerDragEnd = () => {
+      setGuides([]); // Efface les lignes dès que l'utilisateur relâche le clic
+    };
+
+// Dans le composant App :
+const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+const handleExportDeckPdf = async () => {
+  if (!stageRef.current || cards.length === 0) return;
+
+  const previousCardId = activeCardId;
+  const previousMode = mode;
+
+  try {
+    setIsExportingPdf(true);
+    setSelectedFieldId(null); // Masquer les poignées bleues
+    setMode('card'); // S'assurer que les scripts de visibilité sont appliqués
+
+    const capturedImages: string[] = [];
+
+    for (const cardItem of cards) {
+      setActiveCardId(cardItem.id);
+      // Laisser à React + Konva le temps de redessiner la carte et charger ses images
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      if (stageRef.current) {
+        const dataUrl = stageRef.current.toDataURL({ pixelRatio: 3 });
+        capturedImages.push(dataUrl);
+      }
+    }
+
+    exportDeckToPdf(
+      capturedImages,
+      { width: resolvedStyle.width, height: resolvedStyle.height },
+      {
+        cardWidthMm: 63.5, // Format standard 63.5 x 88.9 mm (proportionnel automatiquement)
+        gapMm: 2,
+        drawCropMarks: true,
+        filename: `${pack.name.toLowerCase().replace(/\s+/g, '-')}-planche-a4.pdf`,
+      }
+    );
+  } catch (err) {
+    setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export PDF.");
+  } finally {
+    // Restaurer l'état initial de l'éditeur
+    setActiveCardId(previousCardId);
+    setMode(previousMode);
+    setIsExportingPdf(false);
+  }
+};
+
+  return (
+    <div style={{ display: 'flex', height: '100vh', fontFamily: 'sans-serif', background: '#0f172a', color: '#f8fafc' }}>
+      {/* LEFT SIDEBAR: Deck & Style Selector */}
+      <div style={{ width: '270px', borderRight: '1px solid #1e293b', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '18px' }}>
+          <Layers size={20} color="#f59e0b" /> Modern Geckos
+        </div>
+
+        {/* Mode Toggle */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: '#1e293b', padding: '4px', borderRadius: '8px' }}>
+          <button
+            onClick={() => setMode('card')}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px',
+              borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold',
+              background: mode === 'card' ? '#f59e0b' : 'transparent',
+              color: mode === 'card' ? '#000' : '#94a3b8',
+            }}
+          >
+            <PenTool size={14} /> Cartes
+          </button>
+          <button
+            onClick={() => setMode('template')}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px',
+              borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold',
+              background: mode === 'template' ? '#f59e0b' : 'transparent',
+              color: mode === 'template' ? '#000' : '#94a3b8',
+            }}
+          >
+            <LayoutTemplate size={14} /> Template
+          </button>
+        </div>
+
+        {/* Style & Inheritance Switcher */}
+        <div style={{ background: '#1e293b', padding: '10px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <GitBranch size={13} color="#f59e0b" /> Style actif ({pack.styles.length})
+          </label>
+          <select
+            value={currentStyleKey}
+            onChange={(e) => {
+              const nextKey = e.target.value;
+              setActiveStyleKey(nextKey);
+              if (mode === 'card' && activeCard) {
+                setCards((prev) =>
+                  prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: nextKey } : c))
+                );
+              }
+            }}
+            style={inputStyle}
+          >
+            {pack.styles.map((st) => (
+              <option key={st.key} value={st.key}>
+                {st.name} {st.basedOn ? `↳ (${st.basedOn})` : ''}
+              </option>
+            ))}
+          </select>
+
+          {mode === 'template' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              <button onClick={() => createStyleVariant(true)} style={smallBtnStyle} title="Créer un style enfant héritant du style actuel">
+                + Variante (basedOn)
+              </button>
+              <button onClick={() => createStyleVariant(false)} style={smallBtnStyle}>
+                + Nouveau Style
+              </button>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={addNewCard}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px', background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+        >
+          <Plus size={16} /> Ajouter une Carte
+        </button>
+
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {cards.map((c) => (
+            <div
+              key={c.id}
+              onClick={() => {
+                setActiveCardId(c.id);
+                setActiveStyleKey(c.styleKey);
+              }}
+              style={{
+                padding: '10px', borderRadius: '6px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                background: c.id === activeCard.id ? '#334155' : '#1e293b',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '14px' }}>{c.values.title || 'Sans titre'}</div>
+                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  {pack.styles.find((s) => s.key === c.styleKey)?.name || c.styleKey}
+                </div>
+              </div>
+              {cards.length > 1 && (
+                <Trash2
+                  size={16}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCards(cards.filter((item) => item.id !== c.id));
+                  }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* CENTER: Interactive Konva Stage */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', background: '#020617', overflow: 'auto', padding: '16px' }}>
+        {errorBanner && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7f1d1d', color: '#fecaca', padding: '8px 14px', borderRadius: '6px', fontSize: '13px' }}>
+            <AlertCircle size={16} />
+            <span>{errorBanner}</span>
+            <button onClick={() => setErrorBanner(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
+          </div>
+        )}
+
+        {mode === 'template' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', background: '#1e293b', padding: '8px 12px', borderRadius: '8px' }}>
+            <button onClick={() => addTemplateField('text')} style={toolBtnStyle}>
+              <Type size={15} /> + Texte
+            </button>
+            <button onClick={() => addTemplateField('select')} style={toolBtnStyle}>
+              <List size={15} /> + Liste déroulante
+            </button>
+            <button onClick={() => addTemplateField('image')} style={toolBtnStyle}>
+              <ImageIcon size={15} /> + Image
+            </button>
+            <button onClick={() => addTemplateField('box')} style={toolBtnStyle}>
+              <Square size={15} /> + Cadre
+            </button>
+          </div>
+        )}
+
+        <ErrorBoundary fallbackTitle="Erreur de rendu du canevas">
+          <div style={{ borderRadius: '14px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.7)' }}>
+            <Stage
+              ref={stageRef}
+              width={resolvedStyle.width}
+              height={resolvedStyle.height}
+              onMouseDown={(e) => {
+                if (e.target === e.target.getStage() || e.target.name() === 'card-bg') {
+                  setSelectedFieldId(null);
+                }
+              }}
+            >
+              <Layer>
+                <Rect
+                  name="card-bg"
+                  x={0}
+                  y={0}
+                  width={resolvedStyle.width}
+                  height={resolvedStyle.height}
+                  fill={resolvedStyle.backgroundColor}
+                  stroke={resolvedStyle.borderColor}
+                  strokeWidth={12}
+                />
+
+                {resolvedStyle.fields.map((field) => (
+                  <DraggableFieldNode
+                    key={field.id}
+                    field={field}
+                    rawValue={activeCard?.values[field.id] ?? field.defaultValue ?? ''}
+                    allCardValues={activeCard?.values || {}}
+                    resolvedStyle={resolvedStyle}
+                    isDesignMode={mode === 'template'}
+                    isSelected={selectedFieldId === field.id}
+                    onSelect={() => setSelectedFieldId(field.id)}
+                    onChange={(updates) => updateFieldProps(field.id, updates)}
+                  />
+                ))}
+
+                {guides.map((guide, i) =>
+                  guide.orientation === 'H' ? (
+                    <Line
+                      key={`h-${i}`}
+                      points={[0, guide.position, resolvedStyle.width, guide.position]}
+                      stroke="#38bdf8"
+                      strokeWidth={1}
+                      dash={[4, 4]}
+                      listening={false}
+                    />
+                  ) : (
+                    <Line
+                      key={`v-${i}`}
+                      points={[guide.position, 0, guide.position, resolvedStyle.height]}
+                      stroke="#38bdf8"
+                      strokeWidth={1}
+                      dash={[4, 4]}
+                      listening={false}
+                    />
+                  )
+                )}
+
+              </Layer>
+            </Stage>
+          </div>
+        </ErrorBoundary>
+
+        {/* Bottom Export Toolbar */}
+        <div style={{ display: 'flex', gap: '10px' }}>
+
+            <button
+              onClick={handleExportDeckPdf}
+              disabled={isExportingPdf}
+              style={{
+                ...toolBtnStyle,
+                background: isExportingPdf ? '#475569' : '#6366f1',
+                fontWeight: 'bold',
+              }}
+            >
+              <Printer size={16} />
+              {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
+            </button>
+
+
+          <button onClick={exportPNG} style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}>
+            <Download size={16} /> Exporter Carte PNG
+          </button>
+          <button onClick={exportPackJSON} style={toolBtnStyle}>
+            <FileJson size={16} /> Sauvegarder Pack JSON
+          </button>
+          <label style={toolBtnStyle}>
+            <Upload size={16} /> Charger JSON
+            <input type="file" accept=".json" onChange={importPackJSON} style={{ display: 'none' }} />
+          </label>
+        </div>
+      </div>
+
+      {/* RIGHT SIDEBAR: Context-Aware Inspector */}
+      <div style={{ width: '340px', borderLeft: '1px solid #1e293b', padding: '20px', overflowY: 'auto' }}>
+        <ErrorBoundary fallbackTitle="Erreur dans l'inspecteur">
+          {mode === 'card' ? (
+            <>
+              <h3 style={{ marginTop: 0 }}>Contenu de la Carte</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {resolvedStyle.fields
+                  .filter((f) => f.type !== 'box')
+                  .map((field) => {
+                    const currentVal = activeCard?.values[field.id] ?? field.defaultValue ?? '';
+                    return (
+                      <div key={field.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '13px', color: '#94a3b8' }}>{field.label}</label>
+
+                        {field.type === 'text' && (
+                          <textarea
+                            rows={field.height > 60 ? 4 : 1}
+                            value={currentVal}
+                            onChange={(e) => updateCardValue(field.id, e.target.value)}
+                            style={inputStyle}
+                          />
+                        )}
+
+                        {field.type === 'select' && (
+                          <select
+                            value={currentVal}
+                            onChange={(e) => updateCardValue(field.id, e.target.value)}
+                            style={inputStyle}
+                          >
+                            {(field.options || []).map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        {field.type === 'image' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ ...toolBtnStyle, justifyContent: 'center', background: '#334155' }}>
+                              <Upload size={14} /> Choisir une image locale
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleCardImageUpload(field.id, e)}
+                                style={{ display: 'none' }}
+                              />
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ou coller une URL d'image (https://...)"
+                              value={currentVal.startsWith('data:') ? '' : currentVal}
+                              onChange={(e) => updateCardValue(field.id, e.target.value)}
+                              style={inputStyle}
+                            />
+                            {currentVal && (
+                              <button
+                                onClick={() => updateCardValue(field.id, '')}
+                                style={{ ...smallBtnStyle, background: '#7f1d1d', color: '#fecaca' }}
+                              >
+                                Retirer l'image
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          ) : (
+            <>
+              <h3 style={{ marginTop: 0 }}>Éditeur de Template & Styles</h3>
+
+              {/* Style & Inheritance Settings */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid #1e293b' }}>
+                <div>
+                  <label style={labelStyle}>Nom du Pack</label>
+                  <input
+                    type="text"
+                    value={pack.name}
+                    onChange={(e) => setPack({ ...pack, name: e.target.value })}
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Nom de ce Style</label>
+                  <input
+                    type="text"
+                    value={rawActiveStyle?.name || ''}
+                    onChange={(e) => updateActiveStyleMeta({ name: e.target.value })}
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Hérite du style (basedOn)</label>
+                  <select
+                    value={rawActiveStyle?.basedOn || ''}
+                    onChange={(e) =>
+                      updateActiveStyleMeta({ basedOn: e.target.value || undefined })
+                    }
+                    style={inputStyle}
+                  >
+                    <option value="">-- Aucun (Style racine) --</option>
+                    {pack.styles
+                      .filter((s) => s.key !== currentStyleKey)
+                      .map((s) => (
+                        <option key={s.key} value={s.key}>
+                          {s.name} ({s.key})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Fond</label>
+                    <input
+                      type="color"
+                      value={resolvedStyle.backgroundColor}
+                      onChange={(e) => updateActiveStyleMeta({ backgroundColor: e.target.value })}
+                      style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Bordure</label>
+                    <input
+                      type="color"
+                      value={resolvedStyle.borderColor}
+                      onChange={(e) => updateActiveStyleMeta({ borderColor: e.target.value })}
+                      style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Selected Layer Properties */}
+              {selectedField ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong>Calque : {selectedField.type.toUpperCase()}</strong>
+                      {isFieldInheritedOnly && (
+                        <div style={{ fontSize: '11px', color: '#38bdf8' }}>
+                          Hérité de {rawActiveStyle?.basedOn} (modifier pour surcharger)
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => deleteOrRevertField(selectedField.id)}
+                      style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                    >
+                      <Trash2 size={13} /> {isFieldInheritedOnly ? 'Hérédité' : 'Supprimer'}
+                    </button>
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>Libellé (Label)</label>
+                    <input
+                      type="text"
+                      value={selectedField.label}
+                      onChange={(e) => updateFieldProps(selectedField.id, { label: e.target.value })}
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>
+                      <label style={labelStyle}>X</label>
+                      <input
+                        type="number"
+                        value={selectedField.x}
+                        onChange={(e) => updateFieldProps(selectedField.id, { x: Number(e.target.value) })}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Y</label>
+                      <input
+                        type="number"
+                        value={selectedField.y}
+                        onChange={(e) => updateFieldProps(selectedField.id, { y: Number(e.target.value) })}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Largeur</label>
+                      <input
+                        type="number"
+                        value={selectedField.width}
+                        onChange={(e) => updateFieldProps(selectedField.id, { width: Number(e.target.value) })}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Hauteur</label>
+                      <input
+                        type="number"
+                        value={selectedField.height}
+                        onChange={(e) => updateFieldProps(selectedField.id, { height: Number(e.target.value) })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Select Options Configuration */}
+                  {selectedField.type === 'select' && (
+                    <div style={{ background: '#1e293b', padding: '10px', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>Options de la liste</label>
+                        <button onClick={() => addSelectOption(selectedField)} style={smallBtnStyle}>
+                          + Option
+                        </button>
+                      </div>
+                      {(selectedField.options || []).map((opt, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            placeholder="Clé"
+                            value={opt.value}
+                            onChange={(e) => updateSelectOption(selectedField, idx, 'value', e.target.value)}
+                            style={{ ...inputStyle, width: '38%', padding: '5px', fontSize: '12px' }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Texte affiché"
+                            value={opt.label}
+                            onChange={(e) => updateSelectOption(selectedField, idx, 'label', e.target.value)}
+                            style={{ ...inputStyle, flex: 1, padding: '5px', fontSize: '12px' }}
+                          />
+                          <button
+                            onClick={() => removeSelectOption(selectedField, idx)}
+                            style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: '4px', padding: '4px 6px', cursor: 'pointer' }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Image Opacity & Default URL */}
+                  {selectedField.type === 'image' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div>
+                        <label style={labelStyle}>Opacité ({Math.round((selectedField.opacity ?? 1) * 100)}%)</label>
+                        <input
+                          type="range"
+                          min={0.1}
+                          max={1}
+                          step={0.05}
+                          value={selectedField.opacity ?? 1}
+                          onChange={(e) => updateFieldProps(selectedField.id, { opacity: Number(e.target.value) })}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Image par défaut (URL)</label>
+                        <input
+                          type="text"
+                          placeholder="https://..."
+                          value={selectedField.defaultValue || ''}
+                          onChange={(e) => updateFieldProps(selectedField.id, { defaultValue: e.target.value })}
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Text & Select Typography */}
+                  {(selectedField.type === 'text' || selectedField.type === 'select') && (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div>
+                          <label style={labelStyle}>Taille Police</label>
+                          <input
+                            type="number"
+                            value={selectedField.fontSize || 16}
+                            onChange={(e) => updateFieldProps(selectedField.id, { fontSize: Number(e.target.value) })}
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Alignement</label>
+                          <select
+                            value={selectedField.align || 'left'}
+                            onChange={(e) => updateFieldProps(selectedField.id, { align: e.target.value as any })}
+                            style={inputStyle}
+                          >
+                            <option value="left">Gauche</option>
+                            <option value="center">Centre</option>
+                            <option value="right">Droite</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Couleur du texte</label>
+                        <input
+                          type="color"
+                          value={selectedField.color || '#ffffff'}
+                          onChange={(e) => updateFieldProps(selectedField.id, { color: e.target.value })}
+                          style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {selectedField.type === 'box' && (
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={labelStyle}>Remplissage</label>
+                        <input
+                          type="color"
+                          value={selectedField.fill || '#0f172a'}
+                          onChange={(e) => updateFieldProps(selectedField.id, { fill: e.target.value })}
+                          style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={labelStyle}>Contour</label>
+                        <input
+                          type="color"
+                          value={selectedField.color || '#334155'}
+                          onChange={(e) => updateFieldProps(selectedField.id, { color: e.target.value })}
+                          style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom JS Render Hook */}
+                  <div>
+                    <label style={labelStyle}>Script JS de rendu (optionnel)</label>
+                    <textarea
+                      rows={4}
+                      placeholder={`// Variables: card, style, field
+return {
+  color: '#f59e0b',
+  visible: true
+};`}
+                      value={selectedField.script || ''}
+                      onChange={(e) => updateFieldProps(selectedField.id, { script: e.target.value })}
+                      style={{
+                        ...inputStyle,
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        background: '#020617',
+                      }}
+                    />
+                    {selectedFieldScriptError && (
+                      <div style={{ color: '#f87171', fontSize: '11px', marginTop: '4px' }}>
+                        Erreur JS : {selectedFieldScriptError}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p style={{ color: '#64748b', fontSize: '14px', marginTop: '16px' }}>
+                  Cliquez sur un élément de la carte pour le déplacer, le redimensionner ou modifier ses options.
+                </p>
+              )}
+            </>
+          )}
+        </ErrorBoundary>
+      </div>
+    </div>
+  );
+}
+
+const toolBtnStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '8px 12px',
+  background: '#334155',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  fontSize: '13px',
+};
+
+const smallBtnStyle: React.CSSProperties = {
+  padding: '5px 8px',
+  background: '#334155',
+  color: '#f8fafc',
+  border: 'none',
+  borderRadius: '5px',
+  cursor: 'pointer',
+  fontSize: '11px',
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '8px',
+  borderRadius: '6px',
+  background: '#1e293b',
+  color: '#fff',
+  border: '1px solid #334155',
+  boxSizing: 'border-box',
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: '12px',
+  color: '#94a3b8',
+  display: 'block',
+  marginBottom: '4px',
+};
