@@ -1,0 +1,332 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+
+export interface ImageCropperProps {
+  /** Image source (Data URL or external URL with CORS enabled) */
+  imageSrc: string;
+  /** Target aspect ratio (field.width / field.height) */
+  aspectRatio?: number;
+  /** Output resolution width in pixels (defaults to 600 for crisp 2x export) */
+  outputWidth?: number;
+  /** Callback fired with the cropped image Data URL */
+  onCropComplete: (croppedDataUrl: string) => void;
+  /** Callback to close the modal without saving */
+  onCancel: () => void;
+}
+
+export const ImageCropper: React.FC<ImageCropperProps> = ({
+  imageSrc,
+  aspectRatio = 1,
+  outputWidth = 600,
+  onCropComplete,
+  onCancel,
+}) => {
+  const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
+  const [zoom, setZoom] = useState<number>(1);
+  const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [error, setError] = useState<string | null>(null);
+
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Viewport preview dimensions constrained within a 360x360 box
+  const maxViewport = 360;
+  const viewportWidth = aspectRatio >= 1 ? maxViewport : Math.round(maxViewport * aspectRatio);
+  const viewportHeight = aspectRatio >= 1 ? Math.round(maxViewport / aspectRatio) : maxViewport;
+
+  // Load image safely
+  useEffect(() => {
+    setError(null);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      setImageEl(img);
+      setZoom(1);
+      setOffset({ x: 0, y: 0 });
+    };
+    img.onerror = () => {
+      setError("Impossible de charger l'image (vérifiez le fichier ou les droits CORS).");
+    };
+    img.src = imageSrc;
+  }, [imageSrc]);
+
+  // Compute cover scale so the image always fills the crop box at zoom = 1
+  const getBaseScale = useCallback(
+    (img: HTMLImageElement) => {
+      const scaleX = viewportWidth / img.naturalWidth;
+      const scaleY = viewportHeight / img.naturalHeight;
+      return Math.max(scaleX, scaleY);
+    },
+    [viewportWidth, viewportHeight]
+  );
+
+  // Clamp pan offset so empty borders never appear inside the crop frame
+  const clampOffset = useCallback(
+    (rawX: number, rawY: number, currentZoom: number, img: HTMLImageElement) => {
+      const scale = getBaseScale(img) * currentZoom;
+      const scaledW = img.naturalWidth * scale;
+      const scaledH = img.naturalHeight * scale;
+      const maxX = Math.max(0, (scaledW - viewportWidth) / 2);
+      const maxY = Math.max(0, (scaledH - viewportHeight) / 2);
+
+      return {
+        x: Math.min(maxX, Math.max(-maxX, rawX)),
+        y: Math.min(maxY, Math.max(-maxY, rawY)),
+      };
+    },
+    [getBaseScale, viewportWidth, viewportHeight]
+  );
+
+  // Draw live preview onto the interactive canvas
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || !imageEl) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, viewportWidth, viewportHeight);
+
+    const scale = getBaseScale(imageEl) * zoom;
+    const drawW = imageEl.naturalWidth * scale;
+    const drawH = imageEl.naturalHeight * scale;
+    const drawX = (viewportWidth - drawW) / 2 + offset.x;
+    const drawY = (viewportHeight - drawH) / 2 + offset.y;
+
+    ctx.drawImage(imageEl, drawX, drawY, drawW, drawH);
+
+    // Draw rule-of-thirds alignment grid
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(viewportWidth / 3, 0);
+    ctx.lineTo(viewportWidth / 3, viewportHeight);
+    ctx.moveTo((viewportWidth * 2) / 3, 0);
+    ctx.lineTo((viewportWidth * 2) / 3, viewportHeight);
+    ctx.moveTo(0, viewportHeight / 3);
+    ctx.lineTo(viewportWidth, viewportHeight / 3);
+    ctx.moveTo(0, (viewportHeight * 2) / 3);
+    ctx.lineTo(viewportWidth, (viewportHeight * 2) / 3);
+    ctx.stroke();
+  }, [imageEl, zoom, offset, viewportWidth, viewportHeight, getBaseScale]);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDragging || !imageEl) return;
+    const nextOffset = clampOffset(
+      e.clientX - dragStart.x,
+      e.clientY - dragStart.y,
+      zoom,
+      imageEl
+    );
+    setOffset(nextOffset);
+  };
+
+  const handlePointerUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleZoomChange = (nextZoom: number) => {
+    setZoom(nextZoom);
+    if (imageEl) {
+      setOffset((prev) => clampOffset(prev.x, prev.y, nextZoom, imageEl));
+    }
+  };
+
+  const handleConfirm = () => {
+    if (!imageEl) return;
+
+    const exportHeight = Math.round(outputWidth / aspectRatio);
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = outputWidth;
+    exportCanvas.height = exportHeight;
+
+    const ctx = exportCanvas.getContext('2d');
+    if (!ctx) return;
+
+    const ratioFactor = outputWidth / viewportWidth;
+    const scale = getBaseScale(imageEl) * zoom * ratioFactor;
+    const drawW = imageEl.naturalWidth * scale;
+    const drawH = imageEl.naturalHeight * scale;
+    const drawX = (outputWidth - drawW) / 2 + offset.x * ratioFactor;
+    const drawY = (exportHeight - drawH) / 2 + offset.y * ratioFactor;
+
+    ctx.drawImage(imageEl, drawX, drawY, drawW, drawH);
+
+    try {
+      const dataUrl = exportCanvas.toDataURL('image/png');
+      onCropComplete(dataUrl);
+    } catch {
+      setError("Export impossible : l'image externe bloque la lecture du canevas (CORS).");
+    }
+  };
+
+  return (
+    <div style={styles.backdrop}>
+      <div style={styles.modal}>
+        <h3 style={styles.title}>Recadrer l'illustration</h3>
+
+        {error ? (
+          <div style={styles.errorBox}>{error}</div>
+        ) : (
+          <>
+            <div style={styles.canvasWrapper}>
+              <canvas
+                ref={previewCanvasRef}
+                width={viewportWidth}
+                height={viewportHeight}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                style={{
+                  ...styles.canvas,
+                  cursor: isDragging ? 'grabbing' : 'grab',
+                }}
+              />
+            </div>
+
+            <div style={styles.controls}>
+              <label style={styles.zoomLabel}>
+                Zoom ({Math.round(zoom * 100)}%)
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.05}
+                  value={zoom}
+                  onChange={(e) => handleZoomChange(Number(e.target.value))}
+                  style={styles.slider}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setZoom(1);
+                  setOffset({ x: 0, y: 0 });
+                }}
+                style={styles.secondaryButton}
+              >
+                Réinitialiser
+              </button>
+            </div>
+          </>
+        )}
+
+        <div style={styles.actions}>
+          <button type="button" onClick={onCancel} style={styles.secondaryButton}>
+            Annuler
+          </button>
+          <button
+            type="button"
+            disabled={!imageEl || Boolean(error)}
+            onClick={handleConfirm}
+            style={styles.primaryButton}
+          >
+            Appliquer le recadrage
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const styles: Record<string, React.CSSProperties> = {
+  backdrop: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(2, 6, 23, 0.8)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: '#1e293b',
+    border: '1px solid #334155',
+    borderRadius: '10px',
+    padding: '20px',
+    width: '420px',
+    maxWidth: '95vw',
+    color: '#f8fafc',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+  },
+  title: {
+    margin: '0 0 14px 0',
+    fontSize: '16px',
+    fontWeight: 600,
+  },
+  canvasWrapper: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: '8px',
+    padding: '12px',
+    border: '1px solid #334155',
+  },
+  canvas: {
+    border: '2px solid #f59e0b',
+    borderRadius: '4px',
+    touchAction: 'none',
+    display: 'block',
+  },
+  controls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginTop: '14px',
+  },
+  zoomLabel: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    fontSize: '12px',
+    color: '#cbd5e1',
+  },
+  slider: {
+    width: '100%',
+    accentColor: '#f59e0b',
+  },
+  actions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '8px',
+    marginTop: '18px',
+  },
+  primaryButton: {
+    backgroundColor: '#f59e0b',
+    color: '#0f172a',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '7px 14px',
+    fontWeight: 600,
+    fontSize: '13px',
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    backgroundColor: '#334155',
+    color: '#f8fafc',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '7px 12px',
+    fontSize: '13px',
+    cursor: 'pointer',
+  },
+  errorBox: {
+    padding: '12px',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    border: '1px solid #ef4444',
+    borderRadius: '6px',
+    color: '#fca5a5',
+    fontSize: '13px',
+  },
+};
+
+export default ImageCropper;

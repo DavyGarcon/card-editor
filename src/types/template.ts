@@ -13,6 +13,7 @@ export interface TemplateField {
   y: number;
   width: number;
   height: number;
+  z?: number;
   defaultValue?: string;
   // Text & Select styling
   fontSize?: number;
@@ -24,6 +25,8 @@ export interface TemplateField {
   options?: SelectOption[];
   // Image options
   opacity?: number;
+  // Editable in card mode (default: true)
+  editableInCard?: boolean;
   // Custom JS rendering script
   script?: string;
 }
