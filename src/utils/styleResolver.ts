@@ -7,7 +7,7 @@ import { CardStyleDefinition, ResolvedCardStyle, TemplateField } from '../types/
 export function resolveCardStyle(
   styleKey: string,
   allStyles: CardStyleDefinition[],
-  visited: Set<string> = new Set()
+  visited: Set<string> = new Set(),
 ): ResolvedCardStyle {
   if (visited.has(styleKey)) {
     throw new Error(`Boucle d'héritage détectée (basedOn) sur le style "${styleKey}".`);

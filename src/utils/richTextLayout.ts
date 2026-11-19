@@ -18,9 +18,10 @@ interface LayoutOptions {
   width: number;
   fontSize: number;
   align?: 'left' | 'center' | 'right';
+  fontFamily?: string;
 }
 
-const FONT_FAMILY = 'Arial';
+const DEFAULT_FONT_FAMILY = 'Arial';
 const LINE_HEIGHT_FACTOR = 1.25;
 
 let measureContext: CanvasRenderingContext2D | null = null;
@@ -40,15 +41,21 @@ function toFontStyle(bold: boolean, italic: boolean): string {
   return 'normal';
 }
 
-function measure(text: string, bold: boolean, italic: boolean, fontSize: number): number {
+function measure(
+  text: string,
+  bold: boolean,
+  italic: boolean,
+  fontSize: number,
+  fontFamily: string,
+): number {
   const ctx = getMeasureContext();
   if (!ctx) return text.length * fontSize * 0.5;
-  ctx.font = `${toFontStyle(bold, italic)} normal ${fontSize}px ${FONT_FAMILY}`;
+  ctx.font = `${toFontStyle(bold, italic)} normal ${fontSize}px ${fontFamily}`;
   return ctx.measureText(text).width;
 }
 
 /** Splits parsed HTML segments into words, spaces and explicit line breaks. */
-function tokenize(segments: StyledTextSegment[], fontSize: number): Token[] {
+function tokenize(segments: StyledTextSegment[], fontSize: number, fontFamily: string): Token[] {
   const tokens: Token[] = [];
 
   for (const segment of segments) {
@@ -64,7 +71,7 @@ function tokenize(segments: StyledTextSegment[], fontSize: number): Token[] {
           ...segment,
           text: piece,
           kind: /^\s+$/.test(piece) ? 'space' : 'word',
-          measuredWidth: measure(piece, segment.bold, segment.italic, fontSize),
+          measuredWidth: measure(piece, segment.bold, segment.italic, fontSize, fontFamily),
         });
       }
     }
@@ -80,9 +87,9 @@ function tokenize(segments: StyledTextSegment[], fontSize: number): Token[] {
  */
 export function layoutRichText(
   segments: StyledTextSegment[],
-  { width, fontSize, align = 'left' }: LayoutOptions
+  { width, fontSize, align = 'left', fontFamily = DEFAULT_FONT_FAMILY }: LayoutOptions,
 ): StyledRichRun[] {
-  const tokens = tokenize(segments, fontSize);
+  const tokens = tokenize(segments, fontSize, fontFamily);
   if (tokens.length === 0) return [];
 
   const lines: Token[][] = [[]];

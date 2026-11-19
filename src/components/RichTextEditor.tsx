@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react';
+import { sanitizeRichText } from '../utils/sanitize';
 
 export interface RichTextEditorProps {
   /** HTML string stored in card.values[field.id] */
@@ -21,13 +22,13 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   // Sync external value changes without breaking cursor position during active typing
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value || '';
+      editorRef.current.innerHTML = sanitizeRichText(value || '');
     }
   }, [value]);
 
   const handleInput = useCallback(() => {
     if (editorRef.current) {
-      onChange(editorRef.current.innerHTML);
+      onChange(sanitizeRichText(editorRef.current.innerHTML));
     }
   }, [onChange]);
 
@@ -47,12 +48,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     <div className="rich-text-editor" style={styles.container}>
       {/* Formatting Toolbar */}
       <div style={styles.toolbar}>
-        <button
-          type="button"
-          title="Bold"
-          onClick={() => execFormat('bold')}
-          style={styles.button}
-        >
+        <button type="button" title="Bold" onClick={() => execFormat('bold')} style={styles.button}>
           <strong>B</strong>
         </button>
         <button
@@ -133,13 +129,10 @@ export interface StyledTextSegment {
 
 export function parseRichTextToSegments(html: string): StyledTextSegment[] {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(html || '', 'text/html');
+  const doc = parser.parseFromString(sanitizeRichText(html || ''), 'text/html');
   const segments: StyledTextSegment[] = [];
 
-  const traverse = (
-    node: Node,
-    style: { bold: boolean; italic: boolean; underline: boolean }
-  ) => {
+  const traverse = (node: Node, style: { bold: boolean; italic: boolean; underline: boolean }) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent || '';
       if (text.length > 0) {
@@ -174,7 +167,7 @@ export function parseRichTextToSegments(html: string): StyledTextSegment[] {
   };
 
   doc.body.childNodes.forEach((child) =>
-    traverse(child, { bold: false, italic: false, underline: false })
+    traverse(child, { bold: false, italic: false, underline: false }),
   );
 
   return segments;

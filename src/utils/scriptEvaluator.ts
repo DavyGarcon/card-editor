@@ -1,3 +1,5 @@
+import { interpretScript } from './scriptInterpreter';
+
 export interface ComputedFieldOverrides {
   text?: string;
   visible?: boolean;
@@ -13,30 +15,62 @@ export interface ComputedFieldOverrides {
   error?: string;
 }
 
+const OVERRIDE_KEYS = new Set<keyof ComputedFieldOverrides>([
+  'text',
+  'visible',
+  'color',
+  'fill',
+  'x',
+  'y',
+  'width',
+  'height',
+  'fontSize',
+  'opacity',
+  'src',
+]);
+
+function sanitizeOverrides(value: unknown): ComputedFieldOverrides {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return value === undefined || value === null ? {} : { text: String(value) };
+  }
+
+  const result: ComputedFieldOverrides = {};
+  const source = value as Record<string, unknown>;
+  for (const key of OVERRIDE_KEYS) {
+    const candidate = source[key as string];
+    if (
+      typeof candidate === 'string' ||
+      typeof candidate === 'number' ||
+      typeof candidate === 'boolean'
+    ) {
+      // Only plain primitives are forwarded to the renderer.
+      (result as Record<string, unknown>)[key] = candidate;
+    }
+  }
+  return result;
+}
+
+/**
+ * Evaluates a field render script in a restricted interpreter. Untrusted packs
+ * cannot reach the DOM, network, or host constructors.
+ */
 export function evaluateFieldScript(
   script: string | undefined,
   context: {
     card: Record<string, string>;
     style: Record<string, unknown>;
     field: Record<string, unknown>;
-  }
+  },
 ): ComputedFieldOverrides {
-  if (!script || !script.trim()) {
-    return {};
-  }
+  if (!script || !script.trim()) return {};
 
   try {
-    const normalizedBody = script.includes('return')
-      ? script
-      : `let value; ${script}; return typeof value === 'object' ? value : { text: String(value ?? '') };`;
-
-    const fn = new Function('card', 'style', 'field', `"use strict";\n${normalizedBody}`);
-    const result = fn(context.card, context.style, context.field);
-
-    if (result && typeof result === 'object') {
-      return result as ComputedFieldOverrides;
-    }
-    return {};
+    const result = interpretScript(script, {
+      card: context.card,
+      style: context.style,
+      field: context.field,
+    });
+    return sanitizeOverrides(result);
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : 'Erreur de script',

@@ -20,12 +20,15 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   onCropComplete,
   onCancel,
 }) => {
-  const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
+  const [loadedImage, setLoadedImage] = useState<{
+    src: string;
+    image: HTMLImageElement;
+  } | null>(null);
   const [zoom, setZoom] = useState<number>(1);
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ src: string; message: string } | null>(null);
 
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -34,20 +37,32 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   const viewportWidth = aspectRatio >= 1 ? maxViewport : Math.round(maxViewport * aspectRatio);
   const viewportHeight = aspectRatio >= 1 ? Math.round(maxViewport / aspectRatio) : maxViewport;
 
+  const imageEl = loadedImage?.src === imageSrc ? loadedImage.image : null;
+  const errorMessage = error?.src === imageSrc ? error.message : null;
+
   // Load image safely
   useEffect(() => {
-    setError(null);
+    let cancelled = false;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      setImageEl(img);
+      if (cancelled) return;
+      setLoadedImage({ src: imageSrc, image: img });
       setZoom(1);
       setOffset({ x: 0, y: 0 });
     };
     img.onerror = () => {
-      setError("Impossible de charger l'image (vérifiez le fichier ou les droits CORS).");
+      if (!cancelled) {
+        setError({
+          src: imageSrc,
+          message: "Impossible de charger l'image (vérifiez le fichier ou les droits CORS).",
+        });
+      }
     };
     img.src = imageSrc;
+    return () => {
+      cancelled = true;
+    };
   }, [imageSrc]);
 
   // Compute cover scale so the image always fills the crop box at zoom = 1
@@ -57,7 +72,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
       const scaleY = viewportHeight / img.naturalHeight;
       return Math.max(scaleX, scaleY);
     },
-    [viewportWidth, viewportHeight]
+    [viewportWidth, viewportHeight],
   );
 
   // Clamp pan offset so empty borders never appear inside the crop frame
@@ -74,7 +89,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
         y: Math.min(maxY, Math.max(-maxY, rawY)),
       };
     },
-    [getBaseScale, viewportWidth, viewportHeight]
+    [getBaseScale, viewportWidth, viewportHeight],
   );
 
   // Draw live preview onto the interactive canvas
@@ -118,12 +133,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDragging || !imageEl) return;
-    const nextOffset = clampOffset(
-      e.clientX - dragStart.x,
-      e.clientY - dragStart.y,
-      zoom,
-      imageEl
-    );
+    const nextOffset = clampOffset(e.clientX - dragStart.x, e.clientY - dragStart.y, zoom, imageEl);
     setOffset(nextOffset);
   };
 
@@ -162,7 +172,10 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
       const dataUrl = exportCanvas.toDataURL('image/png');
       onCropComplete(dataUrl);
     } catch {
-      setError("Export impossible : l'image externe bloque la lecture du canevas (CORS).");
+      setError({
+        src: imageSrc,
+        message: "Export impossible : l'image externe bloque la lecture du canevas (CORS).",
+      });
     }
   };
 
@@ -171,8 +184,8 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
       <div style={styles.modal}>
         <h3 style={styles.title}>Recadrer l'illustration</h3>
 
-        {error ? (
-          <div style={styles.errorBox}>{error}</div>
+        {errorMessage ? (
+          <div style={styles.errorBox}>{errorMessage}</div>
         ) : (
           <>
             <div style={styles.canvasWrapper}>
@@ -224,7 +237,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
           </button>
           <button
             type="button"
-            disabled={!imageEl || Boolean(error)}
+            disabled={!imageEl || Boolean(errorMessage)}
             onClick={handleConfirm}
             style={styles.primaryButton}
           >

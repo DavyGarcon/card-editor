@@ -21,7 +21,7 @@ export function getLineGuideStops(
   skipShape: Konva.Node,
   stage: Konva.Stage,
   canvasWidth: number,
-  canvasHeight: number
+  canvasHeight: number,
 ) {
   // 1. Repères du canevas (bords extérieurs + centre)
   const vertical: number[] = [0, canvasWidth / 2, canvasWidth];
@@ -50,13 +50,29 @@ export function getObjectSnappingEdges(node: Konva.Node, stage: Konva.Stage) {
   return {
     vertical: [
       { guide: Math.round(box.x), offset: Math.round(absPos.x - box.x), snap: 'start' as const },
-      { guide: Math.round(box.x + box.width / 2), offset: Math.round(absPos.x - box.x - box.width / 2), snap: 'center' as const },
-      { guide: Math.round(box.x + box.width), offset: Math.round(absPos.x - box.x - box.width), snap: 'end' as const },
+      {
+        guide: Math.round(box.x + box.width / 2),
+        offset: Math.round(absPos.x - box.x - box.width / 2),
+        snap: 'center' as const,
+      },
+      {
+        guide: Math.round(box.x + box.width),
+        offset: Math.round(absPos.x - box.x - box.width),
+        snap: 'end' as const,
+      },
     ],
     horizontal: [
       { guide: Math.round(box.y), offset: Math.round(absPos.y - box.y), snap: 'start' as const },
-      { guide: Math.round(box.y + box.height / 2), offset: Math.round(absPos.y - box.y - box.height / 2), snap: 'center' as const },
-      { guide: Math.round(box.y + box.height), offset: Math.round(absPos.y - box.y - box.height), snap: 'end' as const },
+      {
+        guide: Math.round(box.y + box.height / 2),
+        offset: Math.round(absPos.y - box.y - box.height / 2),
+        snap: 'center' as const,
+      },
+      {
+        guide: Math.round(box.y + box.height),
+        offset: Math.round(absPos.y - box.y - box.height),
+        snap: 'end' as const,
+      },
     ],
   };
 }
@@ -66,7 +82,7 @@ export function getObjectSnappingEdges(node: Konva.Node, stage: Konva.Stage) {
  */
 export function getGuides(
   lineGuideStops: { vertical: number[]; horizontal: number[] },
-  itemBounds: ReturnType<typeof getObjectSnappingEdges>
+  itemBounds: ReturnType<typeof getObjectSnappingEdges>,
 ): SnapLine[] {
   const resultV: SnapLine[] = [];
   const resultH: SnapLine[] = [];
@@ -108,4 +124,3 @@ export function getGuides(
 
   return guides;
 }
-

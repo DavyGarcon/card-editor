@@ -1,0 +1,129 @@
+import { CardData, CardTemplatePack } from '../types/template';
+
+export const INITIAL_PACK: CardTemplatePack = {
+  name: 'Pack RPG Héritiers',
+  activeStyleKey: 'spell_fire',
+  styles: [
+    {
+      key: 'base_spell',
+      name: 'Sort (Base)',
+      width: 375,
+      height: 525,
+      backgroundColor: '#1e293b',
+      borderColor: '#64748b',
+      fields: [
+        {
+          id: 'title',
+          label: 'Nom du Sort',
+          type: 'text',
+          x: 28,
+          y: 26,
+          width: 319,
+          height: 36,
+          fontSize: 24,
+          color: '#f8fafc',
+          align: 'center',
+          defaultValue: 'Sortilège',
+        },
+        {
+          id: 'school',
+          label: 'École de Magie',
+          type: 'select',
+          x: 28,
+          y: 64,
+          width: 319,
+          height: 24,
+          fontSize: 14,
+          color: '#94a3b8',
+          align: 'center',
+          defaultValue: 'evocation',
+          options: [
+            { value: 'evocation', label: 'Évocation' },
+            { value: 'illusion', label: 'Illusion' },
+            { value: 'abjuration', label: 'Abjuration' },
+            { value: 'necromancy', label: 'Nécromancie' },
+          ],
+        },
+        {
+          id: 'artwork',
+          label: 'Illustration',
+          type: 'image',
+          x: 32,
+          y: 98,
+          width: 311,
+          height: 155,
+          opacity: 1,
+        },
+        {
+          id: 'rules',
+          label: 'Description des effets',
+          type: 'text',
+          x: 32,
+          y: 270,
+          width: 311,
+          height: 170,
+          fontSize: 15,
+          color: '#f1f5f9',
+          align: 'left',
+          defaultValue: 'Décrivez les effets du sort ici.',
+        },
+        {
+          id: 'rarity_badge',
+          label: 'Rareté',
+          type: 'select',
+          x: 32,
+          y: 465,
+          width: 311,
+          height: 28,
+          fontSize: 13,
+          color: '#fbbf24',
+          align: 'center',
+          defaultValue: 'common',
+          options: [
+            { value: 'common', label: 'Sort Commun' },
+            { value: 'rare', label: 'Sort Rare' },
+            { value: 'legendary', label: 'Sort Légendaire' },
+          ],
+          script: `return {
+  color: card.rarity_badge === 'legendary' ? '#f59e0b' : card.rarity_badge === 'rare' ? '#38bdf8' : '#94a3b8'
+};`,
+        },
+      ],
+    },
+    {
+      key: 'spell_fire',
+      name: 'Sort de Feu (Hérite de Base)',
+      basedOn: 'base_spell',
+      backgroundColor: '#29130d',
+      borderColor: '#f59e0b',
+      fields: [
+        {
+          id: 'title',
+          label: 'Nom du Sort',
+          type: 'text',
+          x: 28,
+          y: 26,
+          width: 319,
+          height: 36,
+          fontSize: 24,
+          color: '#fbbf24',
+          align: 'center',
+        },
+      ],
+    },
+  ],
+};
+
+export const INITIAL_CARDS: CardData[] = [
+  {
+    id: '1',
+    styleKey: 'spell_fire',
+    values: {
+      title: 'Boule de Feu',
+      school: 'evocation',
+      rules:
+        'Un trait lumineux jaillit de votre index vers un point choisi à portée et explose dans un rugissement de flammes.',
+      rarity_badge: 'rare',
+    },
+  },
+];

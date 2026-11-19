@@ -1,4 +1,4 @@
-import { jsPDF } from 'jspdf';
+import type { jsPDF as JsPdfType } from 'jspdf';
 
 export interface PdfExportOptions {
   /** Largeur réelle d'impression d'une carte en millimètres (ex: 63.5 pour format Poker/Magic) */
@@ -13,10 +13,10 @@ export interface PdfExportOptions {
   filename?: string;
 }
 
-export function exportDeckToPdf(
+export async function exportDeckToPdf(
   cardDataUrls: string[],
   canvasRatio: { width: number; height: number },
-  options: PdfExportOptions = {}
+  options: PdfExportOptions = {},
 ) {
   if (cardDataUrls.length === 0) {
     throw new Error('Aucune carte à exporter.');
@@ -37,7 +37,10 @@ export function exportDeckToPdf(
 
   // Calcul automatique du nombre de colonnes et lignes par page A4
   const cols = Math.max(1, Math.floor((pageWidth - minMargin * 2 + gapMm) / (cardWidthMm + gapMm)));
-  const rows = Math.max(1, Math.floor((pageHeight - minMargin * 2 + gapMm) / (cardHeightMm + gapMm)));
+  const rows = Math.max(
+    1,
+    Math.floor((pageHeight - minMargin * 2 + gapMm) / (cardHeightMm + gapMm)),
+  );
   const cardsPerPage = cols * rows;
 
   // Centrage parfait de la grille sur la feuille A4
@@ -46,6 +49,7 @@ export function exportDeckToPdf(
   const startX = (pageWidth - gridWidth) / 2;
   const startY = (pageHeight - gridHeight) / 2;
 
+  const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -80,13 +84,7 @@ export function exportDeckToPdf(
 /**
  * Trace de fins traits de coupe gris clair aux 4 coins d'une carte.
  */
-function drawCardCropMarks(
-  doc: jsPDF,
-  x: number,
-  y: number,
-  w: number,
-  h: number
-) {
+function drawCardCropMarks(doc: JsPdfType, x: number, y: number, w: number, h: number) {
   const markLen = 3; // Longueur du trait en mm
   const offset = 0.5; // Décalage léger pour ne pas mordre sur l'illustration
 
@@ -109,4 +107,3 @@ function drawCardCropMarks(
   doc.line(x + w + offset, y + h, x + w + offset + markLen, y + h);
   doc.line(x + w, y + h + offset, x + w, y + h + offset + markLen);
 }
-

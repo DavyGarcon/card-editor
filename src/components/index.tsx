@@ -18,14 +18,7 @@ export {
 } from '../utils/FontLoader';
 
 // Interactive Image Cropper (Cropper.js replacement)
-export {
-  ImageCropper,
-  type ImageCropperProps,
-} from './ImageCropper';
+export { ImageCropper, type ImageCropperProps } from './ImageCropper';
 
 // Spectrum & Palette Color Picker (JSColor & SimpleColorPicker replacement)
-export {
-  ColorPicker,
-  DEFAULT_CARD_SWATCHES,
-  type ColorPickerProps,
-} from './ColorPicker';
+export { ColorPicker, DEFAULT_CARD_SWATCHES, type ColorPickerProps } from './ColorPicker';

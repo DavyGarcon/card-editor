@@ -18,6 +18,7 @@ export interface TemplateField {
   defaultValue?: string;
   // Text & Select styling
   fontSize?: number;
+  fontFamily?: string;
   color?: string;
   align?: 'left' | 'center' | 'right';
   // Box styling

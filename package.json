@@ -1,14 +1,20 @@
 {
-  "name": "card-editor",
+  "name": "modern-geckos",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{json,ts,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{json,ts,md}\""
   },
   "dependencies": {
+    "dompurify": "^3.4.18",
     "jspdf": "^4.2.1",
     "konva": "^9.3.14",
     "lucide-react": "^0.454.0",
@@ -17,10 +23,20 @@
     "react-konva": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^8.0.0",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.3",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.8",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.10.1",
     "typescript": "^5.6.2",
-    "vite": "^6.0.0"
+    "typescript-eslint": "^8.73.0",
+    "vite": "^6.0.0",
+    "vitest": "^5.1.1"
   }
 }

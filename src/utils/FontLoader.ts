@@ -1,5 +1,5 @@
 /**
- * Dynamic Google Fonts & Custom Web Font Loader for card-editor.
+ * Dynamic Google Fonts & Custom Web Font Loader for Modern Geckos.
  * Ensures fonts are fetched and ready in `document.fonts` before Konva redraws.
  */
 
@@ -35,7 +35,7 @@ const pendingLoads = new Map<string, Promise<void>>();
 function buildGoogleFontUrl(family: string, weights: string[] = ['400', '700']): string {
   const encodedFamily = encodeURIComponent(family.trim()).replace(/%20/g, '+');
   const sortedWeights = [...new Set(weights)].sort().join(';');
-  return `https://googleapis.com{encodedFamily}:wght@${sortedWeights}&display=swap`;
+  return `https://fonts.googleapis.com/css2?family=${encodedFamily}:wght@${sortedWeights}&display=swap`;
 }
 
 /**
@@ -43,7 +43,7 @@ function buildGoogleFontUrl(family: string, weights: string[] = ['400', '700']):
  */
 export async function loadGoogleFont(
   family: string,
-  weights: string[] = ['400', '700']
+  weights: string[] = ['400', '700'],
 ): Promise<void> {
   const cleanFamily = family.trim();
   if (!cleanFamily) return;
@@ -68,14 +68,15 @@ export async function loadGoogleFont(
 
         await new Promise<void>((resolve, reject) => {
           linkEl!.onload = () => resolve();
-          linkEl!.onerror = () => reject(new Error(`Failed to load stylesheet for font: ${cleanFamily}`));
+          linkEl!.onerror = () =>
+            reject(new Error(`Failed to load stylesheet for font: ${cleanFamily}`));
         });
       }
 
       // Explicitly trigger FontFaceSet loading so Konva canvas draws with the real font immediately
       if ('fonts' in document) {
         await Promise.all(
-          weights.map((weight) => document.fonts.load(`${weight} 16px "${cleanFamily}"`))
+          weights.map((weight) => document.fonts.load(`${weight} 16px "${cleanFamily}"`)),
         );
         await document.fonts.ready;
       }
@@ -95,13 +96,9 @@ export async function loadGoogleFont(
 /**
  * Batch-loads an array of fonts (useful when importing a Template Pack JSON).
  */
-export async function loadTemplateFonts(
-  fonts: Array<string | FontDefinition>
-): Promise<void> {
+export async function loadTemplateFonts(fonts: Array<string | FontDefinition>): Promise<void> {
   const tasks = fonts.map((entry) =>
-    typeof entry === 'string'
-      ? loadGoogleFont(entry)
-      : loadGoogleFont(entry.family, entry.weights)
+    typeof entry === 'string' ? loadGoogleFont(entry) : loadGoogleFont(entry.family, entry.weights),
   );
   await Promise.all(tasks);
 }

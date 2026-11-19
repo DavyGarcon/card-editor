@@ -28,7 +28,10 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
 }) => {
   const shapeRef = useRef<any>(null);
   const trRef = useRef<Konva.Transformer>(null);
-  const [loadedImg, setLoadedImg] = useState<HTMLImageElement | null>(null);
+  const [loadedImage, setLoadedImage] = useState<{
+    src: string;
+    image: HTMLImageElement;
+  } | null>(null);
 
   const computed = evaluateFieldScript(field.script, {
     card: allCardValues,
@@ -45,7 +48,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
   const effectiveColor = computed.color ?? field.color ?? '#ffffff';
   const effectiveFill = computed.fill ?? field.fill ?? '#0f172a';
   const effectiveFontSize = computed.fontSize ?? field.fontSize ?? 16;
-  const effectiveOpacity = (computed.opacity ?? field.opacity ?? 1) * (!isVisible && isDesignMode ? 0.3 : 1);
+  const effectiveFontFamily = field.fontFamily || 'Arial';
+  const effectiveOpacity =
+    (computed.opacity ?? field.opacity ?? 1) * (!isVisible && isDesignMode ? 0.3 : 1);
 
   // Resolve display text for text & select fields
   let displayText = rawValue || field.defaultValue || '';
@@ -61,16 +66,24 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
   const imageSrc = computed.src ?? rawValue ?? field.defaultValue ?? '';
 
   useEffect(() => {
-    if (field.type !== 'image' || !imageSrc) {
-      setLoadedImg(null);
-      return;
-    }
+    if (field.type !== 'image' || !imageSrc) return;
+    let cancelled = false;
     const img = new window.Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => setLoadedImg(img);
-    img.onerror = () => setLoadedImg(null);
+    img.onload = () => {
+      if (!cancelled) setLoadedImage({ src: imageSrc, image: img });
+    };
+    img.onerror = () => {
+      if (!cancelled) setLoadedImage(null);
+    };
     img.src = imageSrc;
+    return () => {
+      cancelled = true;
+    };
   }, [field.type, imageSrc]);
+
+  // A failed or pending load shows the placeholder instead of a stale image.
+  const loadedImg = loadedImage?.src === imageSrc ? loadedImage.image : null;
 
   useEffect(() => {
     if (isSelected && isDesignMode && trRef.current && shapeRef.current) {
@@ -93,6 +106,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
         width={effectiveWidth}
         height={effectiveHeight}
         fontSize={effectiveFontSize}
+        fontFamily={effectiveFontFamily}
         color={effectiveColor}
         align={field.align || 'left'}
         opacity={effectiveOpacity}
@@ -155,6 +169,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           height={effectiveHeight}
           text={displayText || `[${field.label}]`}
           fontSize={effectiveFontSize}
+          fontFamily={effectiveFontFamily}
           fontStyle={field.id === 'title' ? 'bold' : 'normal'}
           fill={effectiveColor}
           align={field.align || 'left'}
@@ -214,7 +229,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           name="template-field"
           ref={trRef}
           rotateEnabled={false}
-          boundBoxFunc={(oldBox, newBox) => (newBox.width < 20 || newBox.height < 20 ? oldBox : newBox)}
+          boundBoxFunc={(oldBox, newBox) =>
+            newBox.width < 20 || newBox.height < 20 ? oldBox : newBox
+          }
         />
       )}
     </>

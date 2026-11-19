@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 export interface ColorPickerProps {
   /** Optional field label */
@@ -43,15 +43,12 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
   presets = DEFAULT_CARD_SWATCHES,
   allowTransparent = false,
 }) => {
-  const [textInput, setTextInput] = useState<string>(value || '#ffffff');
+  // `draft` is only set while the user types; the prop stays the source of truth.
+  const [draft, setDraft] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
-  useEffect(() => {
-    setTextInput(value || '#ffffff');
-  }, [value]);
-
   const handleTextChange = (raw: string) => {
-    setTextInput(raw);
+    setDraft(raw);
     const normalized = raw.startsWith('#') ? raw : `#${raw}`;
     if (HEX_REGEX.test(normalized)) {
       onChange(normalized.toLowerCase());
@@ -75,7 +72,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
           value={safeNativeHex}
           onChange={(e) => {
             const next = e.target.value.toLowerCase();
-            setTextInput(next);
+            setDraft(next);
             onChange(next);
           }}
           style={styles.nativeSwatch}
@@ -84,8 +81,9 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
         {/* Hex Text Input */}
         <input
           type="text"
-          value={textInput}
+          value={draft ?? value ?? '#ffffff'}
           onChange={(e) => handleTextChange(e.target.value)}
+          onBlur={() => setDraft(null)}
           placeholder="#f59e0b"
           maxLength={11}
           style={styles.hexInput}
@@ -114,7 +112,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
                   type="button"
                   title={swatch}
                   onClick={() => {
-                    setTextInput(swatch);
+                    setDraft(swatch);
                     onChange(swatch);
                   }}
                   style={{
@@ -131,14 +129,13 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
                 type="button"
                 title="Transparent"
                 onClick={() => {
-                  setTextInput('transparent');
+                  setDraft('transparent');
                   onChange('transparent');
                 }}
                 style={{
                   ...styles.swatchButton,
                   ...styles.transparentSwatch,
-                  outline:
-                    value === 'transparent' ? '2px solid #f59e0b' : '1px solid #475569',
+                  outline: value === 'transparent' ? '2px solid #f59e0b' : '1px solid #475569',
                 }}
               >
                 ∅

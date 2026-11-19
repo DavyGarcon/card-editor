@@ -14,6 +14,7 @@ export interface RichTextNodeProps {
   width: number;
   height: number;
   fontSize: number;
+  fontFamily: string;
   color: string;
   align: 'left' | 'center' | 'right';
   opacity: number;
@@ -39,6 +40,7 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
   width,
   height,
   fontSize,
+  fontFamily,
   color,
   align,
   opacity,
@@ -51,8 +53,9 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
   const transformerRef = useRef<Konva.Transformer>(null);
 
   const runs = useMemo(
-    () => layoutRichText(parseRichTextToSegments(html || ''), { width, fontSize, align }),
-    [html, width, fontSize, align]
+    () =>
+      layoutRichText(parseRichTextToSegments(html || ''), { width, fontSize, align, fontFamily }),
+    [html, width, fontSize, align, fontFamily],
   );
 
   useEffect(() => {
@@ -101,7 +104,7 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
           <Text
             text={`[${label}]`}
             fontSize={fontSize}
-            fontFamily="Arial"
+            fontFamily={fontFamily}
             fill="#64748b"
             listening={false}
           />
@@ -112,7 +115,7 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
               x={run.x}
               y={run.y}
               text={run.text}
-              fontFamily="Arial"
+              fontFamily={fontFamily}
               fontSize={fontSize}
               fontStyle={toKonvaFontStyle(run.bold, run.italic)}
               textDecoration={run.underline ? 'underline' : ''}

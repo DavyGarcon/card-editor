@@ -25,7 +25,8 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    const captureOwnerStack = (React as unknown as { captureOwnerStack?: () => string | null }).captureOwnerStack;
+    const captureOwnerStack = (React as unknown as { captureOwnerStack?: () => string | null })
+      .captureOwnerStack;
     const ownerStack = typeof captureOwnerStack === 'function' ? captureOwnerStack() : null;
     console.error('[ErrorBoundary]', error, info.componentStack, ownerStack);
   }

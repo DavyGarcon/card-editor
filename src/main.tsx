@@ -9,5 +9,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary fallbackTitle="Erreur critique de l'application">
       <App />
     </ErrorBoundary>
-  </React.StrictMode>
+  </React.StrictMode>,
 );

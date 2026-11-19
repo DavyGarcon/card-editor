@@ -1,9 +1,8 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { Stage, Layer, Rect } from 'react-konva';
 import Konva from 'konva';
 import {
   RichTextEditor,
-  parseRichTextToSegments,
   loadGoogleFont,
   loadTemplateFonts,
   DEFAULT_GAMING_FONTS,
@@ -27,7 +26,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import {
-  CardData,
   CardStyleDefinition,
   CardTemplatePack,
   FieldType,
@@ -45,165 +43,97 @@ import {
   getGuides,
   GuideLineRender,
 } from './utils/snapGuides';
-import { Printer } from 'lucide-react';
+import { Printer, Undo2, Redo2, Save, RotateCcw } from 'lucide-react';
 import { exportDeckToPdf } from './utils/pdfExporter';
-
-const INITIAL_PACK: CardTemplatePack = {
-  name: 'Pack RPG Héritiers',
-  activeStyleKey: 'spell_fire',
-  styles: [
-    {
-      key: 'base_spell',
-      name: 'Sort (Base)',
-      width: 375,
-      height: 525,
-      backgroundColor: '#1e293b',
-      borderColor: '#64748b',
-      fields: [
-        {
-          id: 'title',
-          label: 'Nom du Sort',
-          type: 'text',
-          x: 28,
-          y: 26,
-          width: 319,
-          height: 36,
-          fontSize: 24,
-          color: '#f8fafc',
-          align: 'center',
-          defaultValue: 'Sortilège',
-        },
-        {
-          id: 'school',
-          label: 'École de Magie',
-          type: 'select',
-          x: 28,
-          y: 64,
-          width: 319,
-          height: 24,
-          fontSize: 14,
-          color: '#94a3b8',
-          align: 'center',
-          defaultValue: 'evocation',
-          options: [
-            { value: 'evocation', label: 'Évocation' },
-            { value: 'illusion', label: 'Illusion' },
-            { value: 'abjuration', label: 'Abjuration' },
-            { value: 'necromancy', label: 'Nécromancie' },
-          ],
-        },
-        {
-          id: 'artwork',
-          label: 'Illustration',
-          type: 'image',
-          x: 32,
-          y: 98,
-          width: 311,
-          height: 155,
-          opacity: 1,
-        },
-        {
-          id: 'rules',
-          label: 'Description des effets',
-          type: 'text',
-          x: 32,
-          y: 270,
-          width: 311,
-          height: 170,
-          fontSize: 15,
-          color: '#f1f5f9',
-          align: 'left',
-          defaultValue: 'Décrivez les effets du sort ici.',
-        },
-        {
-          id: 'rarity_badge',
-          label: 'Rareté',
-          type: 'select',
-          x: 32,
-          y: 465,
-          width: 311,
-          height: 28,
-          fontSize: 13,
-          color: '#fbbf24',
-          align: 'center',
-          defaultValue: 'common',
-          options: [
-            { value: 'common', label: 'Sort Commun' },
-            { value: 'rare', label: 'Sort Rare' },
-            { value: 'legendary', label: 'Sort Légendaire' },
-          ],
-          script: `return {
-  color: card.rarity_badge === 'legendary' ? '#f59e0b' : card.rarity_badge === 'rare' ? '#38bdf8' : '#94a3b8'
-};`,
-        },
-      ],
-    },
-    {
-      key: 'spell_fire',
-      name: 'Sort de Feu (Hérite de Base)',
-      basedOn: 'base_spell',
-      backgroundColor: '#29130d',
-      borderColor: '#f59e0b',
-      fields: [
-        {
-          id: 'title',
-          label: 'Nom du Sort',
-          type: 'text',
-          x: 28,
-          y: 26,
-          width: 319,
-          height: 36,
-          fontSize: 24,
-          color: '#fbbf24',
-          align: 'center',
-        },
-      ],
-    },
-  ],
-};
+import { renderCardToDataUrl } from './utils/cardRenderer';
+import { validateDeck, validateTemplatePack } from './utils/templateValidation';
+import { clearProject, loadProject, saveProject } from './utils/persistence';
+import { useUndoableDocument } from './hooks/useUndoableDocument';
+import { INITIAL_CARDS, INITIAL_PACK } from './data/starterPack';
 
 export default function App() {
-  const [pack, setPack] = useState<CardTemplatePack>(INITIAL_PACK);
-  const [activeStyleKey, setActiveStyleKey] = useState<string>(INITIAL_PACK.activeStyleKey || 'spell_fire');
-  const [mode, setMode] = useState<'card' | 'template'>('card');
+  const savedProject = useMemo(() => loadProject({ pack: INITIAL_PACK, cards: INITIAL_CARDS }), []);
+  const { pack, setPack, cards, setCards, setDocument, undo, redo, canUndo, canRedo } =
+    useUndoableDocument({
+      pack: savedProject.pack,
+      cards: savedProject.cards,
+    });
+  const [activeStyleKey, setActiveStyleKey] = useState<string>(
+    savedProject.activeStyleKey || INITIAL_PACK.activeStyleKey || 'spell_fire',
+  );
+  const [mode, setMode] = useState<'card' | 'template'>(savedProject.mode || 'card');
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>('title');
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [dismissedStyleError, setDismissedStyleError] = useState<string | null>(null);
   const [draggedComponentId, setDraggedComponentId] = useState<string | null>(null);
-
-  const [cards, setCards] = useState<CardData[]>([
-    {
-      id: '1',
-      styleKey: 'spell_fire',
-      values: {
-        title: 'Boule de Feu',
-        school: 'evocation',
-        rules: 'Un trait lumineux jaillit de votre index vers un point choisi à portée et explose dans un rugissement de flammes.',
-        rarity_badge: 'rare',
-      },
-    },
-  ]);
-  const [activeCardId, setActiveCardId] = useState<string>('1');
+  const [activeCardId, setActiveCardId] = useState<string>(savedProject.activeCardId || '1');
+  const [cropRequest, setCropRequest] = useState<{
+    src: string;
+    aspectRatio: number;
+    onCropped: (dataUrl: string) => void;
+  } | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
 
   const activeCard = cards.find((c) => c.id === activeCardId) || cards[0];
   const currentStyleKey = mode === 'card' && activeCard ? activeCard.styleKey : activeStyleKey;
 
-  const resolvedStyle = useMemo(() => {
+  const styleResolution = useMemo(() => {
     try {
-      setErrorBanner(null);
-      return resolveCardStyle(currentStyleKey, pack.styles);
+      return {
+        style: resolveCardStyle(currentStyleKey, pack.styles),
+        error: null as string | null,
+      };
     } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : 'Erreur de résolution du style');
-      return resolveCardStyle(pack.styles[0]?.key || 'base_spell', pack.styles.filter((s) => !s.basedOn));
+      return {
+        style: resolveCardStyle(
+          pack.styles[0]?.key || 'base_spell',
+          pack.styles.filter((s) => !s.basedOn),
+        ),
+        error: err instanceof Error ? err.message : 'Erreur de résolution du style',
+      };
     }
   }, [currentStyleKey, pack.styles]);
+  const resolvedStyle = styleResolution.style;
+  const bannerMessage =
+    errorBanner ?? (dismissedStyleError === styleResolution.error ? null : styleResolution.error);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => saveProject({ pack, cards, activeCardId, activeStyleKey, mode }),
+      400,
+    );
+    return () => window.clearTimeout(timer);
+  }, [pack, cards, activeCardId, activeStyleKey, mode]);
+
+  const templateFontNames = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          pack.styles
+            .flatMap((style) => style.fields.map((field) => field.fontFamily))
+            .filter((family): family is string => Boolean(family)),
+        ),
+      ),
+    [pack.styles],
+  );
+
+  useEffect(() => {
+    if (templateFontNames.length === 0) return;
+    let cancelled = false;
+    loadTemplateFonts(templateFontNames).then(() => {
+      if (!cancelled) stageRef.current?.batchDraw();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [templateFontNames]);
 
   const rawActiveStyle = pack.styles.find((s) => s.key === currentStyleKey) || pack.styles[0];
   const selectedField = resolvedStyle.fields.find((f) => f.id === selectedFieldId) || null;
   const isFieldInheritedOnly = Boolean(
     selectedField &&
-      rawActiveStyle?.basedOn &&
-      !rawActiveStyle.fields.some((f) => f.id === selectedField.id)
+    rawActiveStyle?.basedOn &&
+    !rawActiveStyle.fields.some((f) => f.id === selectedField.id),
   );
 
   const selectedFieldScriptError = useMemo(() => {
@@ -252,7 +182,9 @@ export default function App() {
     setPack((prev) => ({ ...prev, styles: [...prev.styles, newStyle] }));
     setActiveStyleKey(newKey);
     if (activeCard) {
-      setCards((prev) => prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: newKey } : c)));
+      setCards((prev) =>
+        prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: newKey } : c)),
+      );
     }
   };
 
@@ -322,7 +254,7 @@ export default function App() {
     setPack((prev) => ({
       ...prev,
       styles: prev.styles.map((s) =>
-        s.key === currentStyleKey ? { ...s, fields: [...s.fields, newField] } : s
+        s.key === currentStyleKey ? { ...s, fields: [...s.fields, newField] } : s,
       ),
     }));
     setSelectedFieldId(newId);
@@ -332,7 +264,7 @@ export default function App() {
     setPack((prev) => ({
       ...prev,
       styles: prev.styles.map((s) =>
-        s.key === currentStyleKey ? { ...s, fields: s.fields.filter((f) => f.id !== fieldId) } : s
+        s.key === currentStyleKey ? { ...s, fields: s.fields.filter((f) => f.id !== fieldId) } : s,
       ),
     }));
     if (selectedFieldId === fieldId) setSelectedFieldId(null);
@@ -385,7 +317,12 @@ export default function App() {
   };
 
   // --- Select Options Editor Helpers ---
-  const updateSelectOption = (field: TemplateField, idx: number, key: keyof SelectOption, val: string) => {
+  const updateSelectOption = (
+    field: TemplateField,
+    idx: number,
+    key: keyof SelectOption,
+    val: string,
+  ) => {
     const nextOptions = [...(field.options || [])];
     nextOptions[idx] = { ...nextOptions[idx], [key]: val };
     updateFieldProps(field.id, { options: nextOptions });
@@ -407,21 +344,34 @@ export default function App() {
   // --- Card Values & Image Upload ---
   const updateCardValue = (fieldId: string, value: string) => {
     setCards((prev) =>
-      prev.map((c) => (c.id === activeCard.id ? { ...c, values: { ...c.values, [fieldId]: value } } : c))
+      prev.map((c) =>
+        c.id === activeCard.id ? { ...c, values: { ...c.values, [fieldId]: value } } : c,
+      ),
     );
   };
 
-  const handleCardImageUpload = (fieldId: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const requestImageCrop = (
+    file: File,
+    aspectRatio: number,
+    onCropped: (dataUrl: string) => void,
+  ) => {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        updateCardValue(fieldId, reader.result);
+        setCropRequest({ src: reader.result, aspectRatio, onCropped });
       }
     };
-    reader.onerror = () => setErrorBanner("Impossible de lire le fichier image.");
+    reader.onerror = () => setErrorBanner('Impossible de lire le fichier image.');
     reader.readAsDataURL(file);
+  };
+
+  const handleCardImageUpload = (field: TemplateField, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    requestImageCrop(file, field.width / Math.max(1, field.height), (dataUrl) =>
+      updateCardValue(field.id, dataUrl),
+    );
+    e.target.value = '';
   };
 
   const addNewCard = () => {
@@ -434,17 +384,14 @@ export default function App() {
   };
 
   // --- Export / Import ---
-  const exportPNG = () => {
+  const exportPNG = async () => {
+    if (!activeCard) return;
     try {
-      setSelectedFieldId(null);
-      setTimeout(() => {
-        if (!stageRef.current) return;
-        const uri = stageRef.current.toDataURL({ pixelRatio: 2 });
-        const link = document.createElement('a');
-        link.download = `${activeCard.values.title || 'carte'}.png`;
-        link.href = uri;
-        link.click();
-      }, 60);
+      const uri = await renderCardToDataUrl(activeCard, resolvedStyle, 2);
+      const link = document.createElement('a');
+      link.download = `${activeCard.values.title || 'carte'}.png`;
+      link.href = uri;
+      link.click();
     } catch (err) {
       setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export PNG.");
     }
@@ -463,148 +410,237 @@ export default function App() {
     }
   };
 
-  const importPackJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const readJsonFile = (file: File, onParsed: (parsed: unknown) => void) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const parsed = JSON.parse(ev.target?.result as string);
-        // Support both multi-style Pack format and single-style legacy format
-        if (Array.isArray(parsed.styles) && parsed.styles.length > 0) {
-          setPack(parsed);
-          const firstKey = parsed.activeStyleKey || parsed.styles[0].key;
-          setActiveStyleKey(firstKey);
-          if (activeCard) {
-            setCards((prev) =>
-              prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: firstKey } : c))
-            );
-          }
-        } else if (Array.isArray(parsed.fields)) {
-          const singlePack: CardTemplatePack = {
-            name: parsed.name || 'Template Importé',
-            activeStyleKey: 'default',
-            styles: [{ key: 'default', name: parsed.name || 'Défaut', ...parsed }],
-          };
-          setPack(singlePack);
-          setActiveStyleKey('default');
-        } else {
-          throw new Error('Format JSON non reconnu.');
-        }
+        onParsed(JSON.parse(ev.target?.result as string));
         setErrorBanner(null);
       } catch (err) {
         setErrorBanner(err instanceof Error ? err.message : 'Fichier JSON invalide.');
       }
     };
+    reader.onerror = () => setErrorBanner('Impossible de lire le fichier.');
     reader.readAsText(file);
   };
 
-    // Dans le composant App :
-    const [guides, setGuides] = useState<GuideLineRender[]>([]);
+  const importPackJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    readJsonFile(file, (parsed) => {
+      const raw = parsed as Record<string, unknown>;
+      // Support both multi-style packs and the legacy single-style format.
+      const candidate =
+        Array.isArray(raw?.fields) && !Array.isArray(raw?.styles)
+          ? {
+              name: raw.name || 'Template Importé',
+              activeStyleKey: 'default',
+              styles: [{ key: 'default', name: raw.name || 'Défaut', ...raw }],
+            }
+          : parsed;
+      const imported = validateTemplatePack(candidate);
+      setPack(imported);
+      const firstKey = imported.activeStyleKey || imported.styles[0].key;
+      setActiveStyleKey(firstKey);
+      setErrorBanner(null);
+    });
+  };
 
-    const handleLayerDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
-      if (mode !== 'template') return;
-      const stage = e.target.getStage();
-      if (!stage) return;
+  const exportProjectJSON = useCallback(() => {
+    try {
+      const payload = { version: 1, pack: { ...pack, activeStyleKey: currentStyleKey }, cards };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.download = `${pack.name.toLowerCase().replace(/\s+/g, '-')}-projet.json`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export du projet.");
+    }
+  }, [pack, cards, currentStyleKey]);
 
-      const lineGuideStops = getLineGuideStops(e.target, stage, resolvedStyle.width, resolvedStyle.height);
-      const itemBounds = getObjectSnappingEdges(e.target, stage);
-      const activeGuides = getGuides(lineGuideStops, itemBounds);
+  const importProjectJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    readJsonFile(file, (parsed) => {
+      const raw = parsed as Record<string, unknown>;
+      const importedPack = validateTemplatePack(raw.pack);
+      const importedCards = validateDeck(raw.cards, importedPack.styles);
+      setDocument({ pack: importedPack, cards: importedCards });
+      const firstKey = importedPack.activeStyleKey || importedPack.styles[0].key;
+      setActiveStyleKey(firstKey);
+      setActiveCardId(importedCards[0]?.id || '1');
+      setErrorBanner(null);
+    });
+  };
 
-      if (activeGuides.length === 0) {
-        setGuides([]);
-        return;
-      }
+  const resetProject = () => {
+    clearProject();
+    setDocument({ pack: INITIAL_PACK, cards: INITIAL_CARDS });
+    setActiveStyleKey(INITIAL_PACK.activeStyleKey || 'spell_fire');
+    setActiveCardId('1');
+    setMode('card');
+    setSelectedFieldId('title');
+    setErrorBanner(null);
+  };
 
-      const absPos = e.target.absolutePosition();
+  // Dans le composant App :
+  const [guides, setGuides] = useState<GuideLineRender[]>([]);
 
-      // Applique la correction magnétique sur X et Y
-      activeGuides.forEach((lg) => {
-        if (lg.orientation === 'V') {
-          const edge = itemBounds.vertical.find((b) => b.snap === lg.snap);
-          if (edge) absPos.x = lg.lineGuide + edge.offset;
-        } else if (lg.orientation === 'H') {
-          const edge = itemBounds.horizontal.find((b) => b.snap === lg.snap);
-          if (edge) absPos.y = lg.lineGuide + edge.offset;
-        }
-      });
+  const handleLayerDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    if (mode !== 'template') return;
+    const stage = e.target.getStage();
+    if (!stage) return;
 
-      e.target.absolutePosition(absPos);
+    const lineGuideStops = getLineGuideStops(
+      e.target,
+      stage,
+      resolvedStyle.width,
+      resolvedStyle.height,
+    );
+    const itemBounds = getObjectSnappingEdges(e.target, stage);
+    const activeGuides = getGuides(lineGuideStops, itemBounds);
 
-      setGuides(
-        activeGuides.map((g) => ({
-          orientation: g.orientation,
-          position: g.lineGuide,
-        }))
-      );
-    };
-
-    const handleLayerDragEnd = () => {
-      setGuides([]); // Efface les lignes dès que l'utilisateur relâche le clic
-    };
-
-// Dans le composant App :
-const [isExportingPdf, setIsExportingPdf] = useState(false);
-
-const handleExportDeckPdf = async () => {
-  if (!stageRef.current || cards.length === 0) return;
-
-  const previousCardId = activeCardId;
-  const previousMode = mode;
-
-  try {
-    setIsExportingPdf(true);
-    setSelectedFieldId(null); // Masquer les poignées bleues
-    setMode('card'); // S'assurer que les scripts de visibilité sont appliqués
-
-    const capturedImages: string[] = [];
-
-    for (const cardItem of cards) {
-      setActiveCardId(cardItem.id);
-      // Laisser à React + Konva le temps de redessiner la carte et charger ses images
-      await new Promise((resolve) => setTimeout(resolve, 120));
-
-      if (stageRef.current) {
-        const dataUrl = stageRef.current.toDataURL({ pixelRatio: 3 });
-        capturedImages.push(dataUrl);
-      }
+    if (activeGuides.length === 0) {
+      setGuides([]);
+      return;
     }
 
-    exportDeckToPdf(
-      capturedImages,
-      { width: resolvedStyle.width, height: resolvedStyle.height },
-      {
-        cardWidthMm: 63.5, // Format standard 63.5 x 88.9 mm (proportionnel automatiquement)
+    const absPos = e.target.absolutePosition();
+
+    // Applique la correction magnétique sur X et Y
+    activeGuides.forEach((lg) => {
+      if (lg.orientation === 'V') {
+        const edge = itemBounds.vertical.find((b) => b.snap === lg.snap);
+        if (edge) absPos.x = lg.lineGuide + edge.offset;
+      } else if (lg.orientation === 'H') {
+        const edge = itemBounds.horizontal.find((b) => b.snap === lg.snap);
+        if (edge) absPos.y = lg.lineGuide + edge.offset;
+      }
+    });
+
+    e.target.absolutePosition(absPos);
+
+    setGuides(
+      activeGuides.map((g) => ({
+        orientation: g.orientation,
+        position: g.lineGuide,
+      })),
+    );
+  };
+
+  const handleLayerDragEnd = () => {
+    setGuides([]); // Efface les lignes dès que l'utilisateur relâche le clic
+  };
+
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const handleExportDeckPdf = async () => {
+    if (cards.length === 0) return;
+    try {
+      setIsExportingPdf(true);
+      const capturedImages: string[] = [];
+      let ratio = { width: resolvedStyle.width, height: resolvedStyle.height };
+
+      for (const cardItem of cards) {
+        const cardStyle = resolveCardStyle(cardItem.styleKey, pack.styles);
+        if (capturedImages.length === 0)
+          ratio = { width: cardStyle.width, height: cardStyle.height };
+        capturedImages.push(await renderCardToDataUrl(cardItem, cardStyle, 3));
+      }
+
+      await exportDeckToPdf(capturedImages, ratio, {
+        cardWidthMm: 63.5,
         gapMm: 2,
         drawCropMarks: true,
         filename: `${pack.name.toLowerCase().replace(/\s+/g, '-')}-planche-a4.pdf`,
+      });
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export PDF.");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+      } else if (key === 'y') {
+        event.preventDefault();
+        redo();
+      } else if (key === 's') {
+        event.preventDefault();
+        exportProjectJSON();
       }
-    );
-  } catch (err) {
-    setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export PDF.");
-  } finally {
-    // Restaurer l'état initial de l'éditeur
-    setActiveCardId(previousCardId);
-    setMode(previousMode);
-    setIsExportingPdf(false);
-  }
-};
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo, exportProjectJSON]);
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'sans-serif', background: '#0f172a', color: '#f8fafc' }}>
+    <div className="app-shell">
       {/* LEFT SIDEBAR: Deck & Style Selector */}
-      <div style={{ width: '270px', borderRight: '1px solid #1e293b', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '18px' }}>
+      <div className="sidebar-left">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: 'bold',
+            fontSize: '18px',
+          }}
+        >
           <Layers size={20} color="#f59e0b" /> Modern Geckos
         </div>
 
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            title="Annuler (Ctrl+Z)"
+            aria-label="Annuler"
+            style={{ ...smallBtnStyle, flex: 1, opacity: canUndo ? 1 : 0.4 }}
+          >
+            <Undo2 size={14} /> Annuler
+          </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            title="Rétablir (Ctrl+Maj+Z)"
+            aria-label="Rétablir"
+            style={{ ...smallBtnStyle, flex: 1, opacity: canRedo ? 1 : 0.4 }}
+          >
+            <Redo2 size={14} /> Rétablir
+          </button>
+        </div>
+
         {/* Mode Toggle */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: '#1e293b', padding: '4px', borderRadius: '8px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            background: '#1e293b',
+            padding: '4px',
+            borderRadius: '8px',
+          }}
+        >
           <button
             onClick={() => setMode('card')}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px',
-              borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '8px',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 'bold',
               background: mode === 'card' ? '#f59e0b' : 'transparent',
               color: mode === 'card' ? '#000' : '#94a3b8',
             }}
@@ -614,8 +650,15 @@ const handleExportDeckPdf = async () => {
           <button
             onClick={() => setMode('template')}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px',
-              borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '8px',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 'bold',
               background: mode === 'template' ? '#f59e0b' : 'transparent',
               color: mode === 'template' ? '#000' : '#94a3b8',
             }}
@@ -625,8 +668,25 @@ const handleExportDeckPdf = async () => {
         </div>
 
         {/* Style & Inheritance Switcher */}
-        <div style={{ background: '#1e293b', padding: '10px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div
+          style={{
+            background: '#1e293b',
+            padding: '10px',
+            borderRadius: '8px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <label
+            style={{
+              fontSize: '12px',
+              color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
             <GitBranch size={13} color="#f59e0b" /> Style actif ({pack.styles.length})
           </label>
           <select
@@ -636,7 +696,7 @@ const handleExportDeckPdf = async () => {
               setActiveStyleKey(nextKey);
               if (mode === 'card' && activeCard) {
                 setCards((prev) =>
-                  prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: nextKey } : c))
+                  prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: nextKey } : c)),
                 );
               }
             }}
@@ -651,7 +711,11 @@ const handleExportDeckPdf = async () => {
 
           {mode === 'template' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-              <button onClick={() => createStyleVariant(true)} style={smallBtnStyle} title="Créer un style enfant héritant du style actuel">
+              <button
+                onClick={() => createStyleVariant(true)}
+                style={smallBtnStyle}
+                title="Créer un style enfant héritant du style actuel"
+              >
                 + Variante (basedOn)
               </button>
               <button onClick={() => createStyleVariant(false)} style={smallBtnStyle}>
@@ -663,12 +727,31 @@ const handleExportDeckPdf = async () => {
 
         <button
           onClick={addNewCard}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px', background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: '8px',
+            background: '#334155',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+          }}
         >
           <Plus size={16} /> Ajouter une Carte
         </button>
 
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+          }}
+        >
           {cards.map((c) => (
             <div
               key={c.id}
@@ -677,7 +760,12 @@ const handleExportDeckPdf = async () => {
                 setActiveStyleKey(c.styleKey);
               }}
               style={{
-                padding: '10px', borderRadius: '6px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '10px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 background: c.id === activeCard.id ? '#334155' : '#1e293b',
               }}
             >
@@ -702,19 +790,49 @@ const handleExportDeckPdf = async () => {
       </div>
 
       {/* CENTER: Interactive Konva Stage */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', background: '#020617', overflow: 'auto', padding: '16px' }}>
-        {errorBanner && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#7f1d1d', color: '#fecaca', padding: '8px 14px', borderRadius: '6px', fontSize: '13px' }}>
+      <div className="stage-area">
+        {bannerMessage && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: '#7f1d1d',
+              color: '#fecaca',
+              padding: '8px 14px',
+              borderRadius: '6px',
+              fontSize: '13px',
+            }}
+          >
             <AlertCircle size={16} />
-            <span>{errorBanner}</span>
-            <button onClick={() => setErrorBanner(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
+            <span>{bannerMessage}</span>
+            <button
+              onClick={() => {
+                setErrorBanner(null);
+                if (styleResolution.error) setDismissedStyleError(styleResolution.error);
+              }}
+              aria-label="Fermer le message d'erreur"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+              }}
+            >
+              ×
+            </button>
           </div>
         )}
 
-
-
         <ErrorBoundary fallbackTitle="Erreur de rendu du canevas">
-          <div style={{ borderRadius: '14px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.7)' }}>
+          <div
+            style={{
+              borderRadius: '14px',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.7)',
+            }}
+          >
             <Stage
               ref={stageRef}
               width={resolvedStyle.width}
@@ -724,6 +842,8 @@ const handleExportDeckPdf = async () => {
                   setSelectedFieldId(null);
                 }
               }}
+              onDragMove={handleLayerDragMove}
+              onDragEnd={handleLayerDragEnd}
             >
               <Layer>
                 <Rect
@@ -739,14 +859,16 @@ const handleExportDeckPdf = async () => {
 
                 {[...resolvedStyle.fields]
                   .map((field, index) => ({ field, index }))
-                  .sort((a, b) => (a.field.z ?? a.index) - (b.field.z ?? b.index) || a.index - b.index)
+                  .sort(
+                    (a, b) => (a.field.z ?? a.index) - (b.field.z ?? b.index) || a.index - b.index,
+                  )
                   .map(({ field }) => {
                     const isCardEditable = field.editableInCard !== false;
                     const rawValue = isCardEditable
                       ? (activeCard?.values[field.id] ?? field.defaultValue ?? '')
                       : (field.defaultValue ?? '');
                     const allCardValues = isCardEditable
-                      ? (activeCard?.values || {})
+                      ? activeCard?.values || {}
                       : { ...(activeCard?.values || {}), [field.id]: field.defaultValue ?? '' };
 
                     return (
@@ -783,46 +905,74 @@ const handleExportDeckPdf = async () => {
                       dash={[4, 4]}
                       listening={false}
                     />
-                  )
+                  ),
                 )}
-
               </Layer>
             </Stage>
           </div>
         </ErrorBoundary>
 
         {/* Bottom Export Toolbar */}
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button
+            onClick={handleExportDeckPdf}
+            disabled={isExportingPdf}
+            style={{
+              ...toolBtnStyle,
+              background: isExportingPdf ? '#475569' : '#6366f1',
+              fontWeight: 'bold',
+            }}
+          >
+            <Printer size={16} />
+            {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
+          </button>
 
-            <button
-              onClick={handleExportDeckPdf}
-              disabled={isExportingPdf}
-              style={{
-                ...toolBtnStyle,
-                background: isExportingPdf ? '#475569' : '#6366f1',
-                fontWeight: 'bold',
-              }}
-            >
-              <Printer size={16} />
-              {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
-            </button>
-
-
-          <button onClick={exportPNG} style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}>
+          <button
+            onClick={exportPNG}
+            style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
+          >
             <Download size={16} /> Exporter Carte PNG
           </button>
           <button onClick={exportPackJSON} style={toolBtnStyle}>
-            <FileJson size={16} /> Sauvegarder Pack JSON
+            <FileJson size={16} /> Pack JSON
           </button>
           <label style={toolBtnStyle}>
-            <Upload size={16} /> Charger JSON
-            <input type="file" accept=".json" onChange={importPackJSON} style={{ display: 'none' }} />
+            <Upload size={16} /> Charger Pack
+            <input
+              type="file"
+              accept=".json"
+              onChange={importPackJSON}
+              style={{ display: 'none' }}
+            />
           </label>
+          <button
+            onClick={exportProjectJSON}
+            style={toolBtnStyle}
+            title="Sauvegarder le projet (Ctrl+S)"
+          >
+            <Save size={16} /> Projet JSON
+          </button>
+          <label style={toolBtnStyle}>
+            <Upload size={16} /> Charger Projet
+            <input
+              type="file"
+              accept=".json"
+              onChange={importProjectJSON}
+              style={{ display: 'none' }}
+            />
+          </label>
+          <button
+            onClick={resetProject}
+            style={{ ...toolBtnStyle, background: '#7f1d1d' }}
+            title="Réinitialiser et effacer la sauvegarde locale"
+          >
+            <RotateCcw size={16} /> Réinitialiser
+          </button>
         </div>
       </div>
 
       {/* RIGHT SIDEBAR: Context-Aware Inspector */}
-      <div style={{ width: '340px', borderLeft: '1px solid #1e293b', padding: '20px', overflowY: 'auto' }}>
+      <div className="sidebar-right">
         <ErrorBoundary fallbackTitle="Erreur dans l'inspecteur">
           {mode === 'card' ? (
             <>
@@ -833,7 +983,10 @@ const handleExportDeckPdf = async () => {
                   .map((field) => {
                     const currentVal = activeCard?.values[field.id] ?? field.defaultValue ?? '';
                     return (
-                      <div key={field.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div
+                        key={field.id}
+                        style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
+                      >
                         <label style={{ fontSize: '13px', color: '#94a3b8' }}>{field.label}</label>
 
                         {field.type === 'text' && (
@@ -868,12 +1021,18 @@ const handleExportDeckPdf = async () => {
 
                         {field.type === 'image' && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label style={{ ...toolBtnStyle, justifyContent: 'center', background: '#334155' }}>
+                            <label
+                              style={{
+                                ...toolBtnStyle,
+                                justifyContent: 'center',
+                                background: '#334155',
+                              }}
+                            >
                               <Upload size={14} /> Choisir une image locale
                               <input
                                 type="file"
                                 accept="image/*"
-                                onChange={(e) => handleCardImageUpload(field.id, e)}
+                                onChange={(e) => handleCardImageUpload(field, e)}
                                 style={{ display: 'none' }}
                               />
                             </label>
@@ -887,7 +1046,11 @@ const handleExportDeckPdf = async () => {
                             {currentVal && (
                               <button
                                 onClick={() => updateCardValue(field.id, '')}
-                                style={{ ...smallBtnStyle, background: '#7f1d1d', color: '#fecaca' }}
+                                style={{
+                                  ...smallBtnStyle,
+                                  background: '#7f1d1d',
+                                  color: '#fecaca',
+                                }}
                               >
                                 Retirer l'image
                               </button>
@@ -904,7 +1067,15 @@ const handleExportDeckPdf = async () => {
               <h3 style={{ marginTop: 0 }}>Éditeur de Template & Styles</h3>
 
               {/* Style & Inheritance Settings */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid #1e293b' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  paddingBottom: '16px',
+                  borderBottom: '1px solid #1e293b',
+                }}
+              >
                 <div>
                   <label style={labelStyle}>Nom du Pack</label>
                   <input
@@ -947,53 +1118,85 @@ const handleExportDeckPdf = async () => {
 
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Fond</label>
-                    <input
-                      type="color"
+                    <ColorPicker
+                      label="Fond"
                       value={resolvedStyle.backgroundColor}
-                      onChange={(e) => updateActiveStyleMeta({ backgroundColor: e.target.value })}
-                      style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                      onChange={(backgroundColor) => updateActiveStyleMeta({ backgroundColor })}
                     />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Bordure</label>
-                    <input
-                      type="color"
+                    <ColorPicker
+                      label="Bordure"
                       value={resolvedStyle.borderColor}
-                      onChange={(e) => updateActiveStyleMeta({ borderColor: e.target.value })}
-                      style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                      onChange={(borderColor) => updateActiveStyleMeta({ borderColor })}
                     />
                   </div>
                 </div>
               </div>
 
               {/* Component Browser */}
-              <div style={{ marginTop: '16px', paddingBottom: '16px', borderBottom: '1px solid #1e293b' }}>
-                <label style={labelStyle}>Arborescence des composants ({resolvedStyle.fields.length})</label>
+              <div
+                style={{
+                  marginTop: '16px',
+                  paddingBottom: '16px',
+                  borderBottom: '1px solid #1e293b',
+                }}
+              >
+                <label style={labelStyle}>
+                  Arborescence des composants ({resolvedStyle.fields.length})
+                </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                  <button onClick={() => addTemplateField('text')} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
+                  <button
+                    onClick={() => addTemplateField('text')}
+                    style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}
+                  >
                     <Type size={14} /> + Texte
                   </button>
-                  <button onClick={() => addTemplateField('select')} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
+                  <button
+                    onClick={() => addTemplateField('select')}
+                    style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}
+                  >
                     <List size={14} /> + Liste
                   </button>
-                  <button onClick={() => addTemplateField('image')} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
+                  <button
+                    onClick={() => addTemplateField('image')}
+                    style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}
+                  >
                     <ImageIcon size={14} /> + Image
                   </button>
-                  <button onClick={() => addTemplateField('box')} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
+                  <button
+                    onClick={() => addTemplateField('box')}
+                    style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}
+                  >
                     <Square size={14} /> + Cadre
                   </button>
-                  <button onClick={() => addTemplateField('richtext')} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
+                  <button
+                    onClick={() => addTemplateField('richtext')}
+                    style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}
+                  >
                     <PenTool size={14} /> + Richtext
                   </button>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto', marginTop: '8px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    maxHeight: '220px',
+                    overflowY: 'auto',
+                    marginTop: '8px',
+                  }}
+                >
                   {[...resolvedStyle.fields]
                     .map((field, index) => ({ field, index }))
-                    .sort((a, b) => (b.field.z ?? b.index) - (a.field.z ?? a.index) || b.index - a.index)
+                    .sort(
+                      (a, b) =>
+                        (b.field.z ?? b.index) - (a.field.z ?? a.index) || b.index - a.index,
+                    )
                     .map(({ field, index }) => {
                       const inherited = Boolean(
-                        rawActiveStyle?.basedOn && !rawActiveStyle.fields.some((f) => f.id === field.id)
+                        rawActiveStyle?.basedOn &&
+                        !rawActiveStyle.fields.some((f) => f.id === field.id),
                       );
                       const Icon =
                         field.type === 'image'
@@ -1042,24 +1245,50 @@ const handleExportDeckPdf = async () => {
                         >
                           <span style={{ color: '#475569', fontSize: '12px' }}>└</span>
                           <Icon size={14} color={isSelected ? '#f59e0b' : '#94a3b8'} />
-                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span
+                            style={{
+                              flex: 1,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
                             {field.label || field.id}
                           </span>
-                          <span style={{ fontSize: '11px', color: '#64748b' }}>z:{field.z ?? index}</span>
-                          {inherited && <span style={{ fontSize: '10px', color: '#38bdf8' }}>hérité</span>}
+                          <span style={{ fontSize: '11px', color: '#64748b' }}>
+                            z:{field.z ?? index}
+                          </span>
+                          {inherited && (
+                            <span style={{ fontSize: '10px', color: '#38bdf8' }}>hérité</span>
+                          )}
                         </div>
                       );
                     })}
                   {resolvedStyle.fields.length === 0 && (
-                    <div style={{ color: '#64748b', fontSize: '13px', padding: '4px 0' }}>Aucun composant</div>
+                    <div style={{ color: '#64748b', fontSize: '13px', padding: '4px 0' }}>
+                      Aucun composant
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Selected Layer Properties */}
               {selectedField ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    marginTop: '16px',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
                     <div>
                       <strong>Calque : {selectedField.type.toUpperCase()}</strong>
                       {isFieldInheritedOnly && (
@@ -1070,7 +1299,18 @@ const handleExportDeckPdf = async () => {
                     </div>
                     <button
                       onClick={() => deleteOrRevertField(selectedField.id)}
-                      style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                      style={{
+                        background: '#ef4444',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '12px',
+                      }}
                     >
                       <Trash2 size={13} /> {isFieldInheritedOnly ? 'Hérédité' : 'Supprimer'}
                     </button>
@@ -1081,17 +1321,37 @@ const handleExportDeckPdf = async () => {
                     <input
                       type="text"
                       value={selectedField.label}
-                      onChange={(e) => updateFieldProps(selectedField.id, { label: e.target.value })}
+                      onChange={(e) =>
+                        updateFieldProps(selectedField.id, { label: e.target.value })
+                      }
                       style={inputStyle}
                     />
                   </div>
 
-                  <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', padding: '8px 10px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#e2e8f0', cursor: 'pointer' }}>
+                  <div
+                    style={{
+                      background: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '13px',
+                        color: '#e2e8f0',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={selectedField.editableInCard !== false}
-                        onChange={(e) => updateFieldProps(selectedField.id, { editableInCard: e.target.checked })}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { editableInCard: e.target.checked })
+                        }
                       />
                       Éditable en mode Carte
                     </label>
@@ -1108,7 +1368,9 @@ const handleExportDeckPdf = async () => {
                       <input
                         type="number"
                         value={selectedField.x}
-                        onChange={(e) => updateFieldProps(selectedField.id, { x: Number(e.target.value) })}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { x: Number(e.target.value) })
+                        }
                         style={inputStyle}
                       />
                     </div>
@@ -1117,7 +1379,9 @@ const handleExportDeckPdf = async () => {
                       <input
                         type="number"
                         value={selectedField.y}
-                        onChange={(e) => updateFieldProps(selectedField.id, { y: Number(e.target.value) })}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { y: Number(e.target.value) })
+                        }
                         style={inputStyle}
                       />
                     </div>
@@ -1126,7 +1390,9 @@ const handleExportDeckPdf = async () => {
                       <input
                         type="number"
                         value={selectedField.width}
-                        onChange={(e) => updateFieldProps(selectedField.id, { width: Number(e.target.value) })}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { width: Number(e.target.value) })
+                        }
                         style={inputStyle}
                       />
                     </div>
@@ -1135,7 +1401,9 @@ const handleExportDeckPdf = async () => {
                       <input
                         type="number"
                         value={selectedField.height}
-                        onChange={(e) => updateFieldProps(selectedField.id, { height: Number(e.target.value) })}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { height: Number(e.target.value) })
+                        }
                         style={inputStyle}
                       />
                     </div>
@@ -1143,8 +1411,13 @@ const handleExportDeckPdf = async () => {
                       <label style={labelStyle}>Z (ordre)</label>
                       <input
                         type="number"
-                        value={selectedField.z ?? resolvedStyle.fields.findIndex((f) => f.id === selectedField.id)}
-                        onChange={(e) => updateFieldProps(selectedField.id, { z: Number(e.target.value) })}
+                        value={
+                          selectedField.z ??
+                          resolvedStyle.fields.findIndex((f) => f.id === selectedField.id)
+                        }
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { z: Number(e.target.value) })
+                        }
                         style={inputStyle}
                       />
                     </div>
@@ -1157,7 +1430,9 @@ const handleExportDeckPdf = async () => {
                       <textarea
                         rows={selectedField.height > 60 ? 4 : 2}
                         value={selectedField.defaultValue || ''}
-                        onChange={(e) => updateFieldProps(selectedField.id, { defaultValue: e.target.value })}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { defaultValue: e.target.value })
+                        }
                         style={inputStyle}
                       />
                     </div>
@@ -1168,20 +1443,33 @@ const handleExportDeckPdf = async () => {
                       <label style={labelStyle}>Contenu riche (Template)</label>
                       <RichTextEditor
                         value={selectedField.defaultValue || ''}
-                        onChange={(html) => updateFieldProps(selectedField.id, { defaultValue: html })}
+                        onChange={(html) =>
+                          updateFieldProps(selectedField.id, { defaultValue: html })
+                        }
                       />
                     </div>
                   )}
 
                   {/* Select Options Configuration */}
                   {selectedField.type === 'select' && (
-                    <div style={{ background: '#1e293b', padding: '10px', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div
+                      style={{
+                        background: '#1e293b',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
+                    >
                       {selectedField.editableInCard === false && (
                         <div>
                           <label style={labelStyle}>Valeur sélectionnée (Template)</label>
                           <select
                             value={selectedField.defaultValue || ''}
-                            onChange={(e) => updateFieldProps(selectedField.id, { defaultValue: e.target.value })}
+                            onChange={(e) =>
+                              updateFieldProps(selectedField.id, { defaultValue: e.target.value })
+                            }
                             style={inputStyle}
                           >
                             <option value="">-- Aucune --</option>
@@ -1193,31 +1481,61 @@ const handleExportDeckPdf = async () => {
                           </select>
                         </div>
                       )}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <label style={{ ...labelStyle, marginBottom: 0 }}>Options de la liste</label>
-                        <button onClick={() => addSelectOption(selectedField)} style={smallBtnStyle}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>
+                          Options de la liste
+                        </label>
+                        <button
+                          onClick={() => addSelectOption(selectedField)}
+                          style={smallBtnStyle}
+                        >
                           + Option
                         </button>
                       </div>
                       {(selectedField.options || []).map((opt, idx) => (
-                        <div key={idx} style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <div
+                          key={idx}
+                          style={{ display: 'flex', gap: '4px', alignItems: 'center' }}
+                        >
                           <input
                             type="text"
                             placeholder="Clé"
                             value={opt.value}
-                            onChange={(e) => updateSelectOption(selectedField, idx, 'value', e.target.value)}
-                            style={{ ...inputStyle, width: '38%', padding: '5px', fontSize: '12px' }}
+                            onChange={(e) =>
+                              updateSelectOption(selectedField, idx, 'value', e.target.value)
+                            }
+                            style={{
+                              ...inputStyle,
+                              width: '38%',
+                              padding: '5px',
+                              fontSize: '12px',
+                            }}
                           />
                           <input
                             type="text"
                             placeholder="Texte affiché"
                             value={opt.label}
-                            onChange={(e) => updateSelectOption(selectedField, idx, 'label', e.target.value)}
+                            onChange={(e) =>
+                              updateSelectOption(selectedField, idx, 'label', e.target.value)
+                            }
                             style={{ ...inputStyle, flex: 1, padding: '5px', fontSize: '12px' }}
                           />
                           <button
                             onClick={() => removeSelectOption(selectedField, idx)}
-                            style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: '4px', padding: '4px 6px', cursor: 'pointer' }}
+                            style={{
+                              background: '#7f1d1d',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '4px 6px',
+                              cursor: 'pointer',
+                            }}
                           >
                             ×
                           </button>
@@ -1230,7 +1548,13 @@ const handleExportDeckPdf = async () => {
                   {selectedField.type === 'image' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {selectedField.editableInCard === false && (
-                        <label style={{ ...toolBtnStyle, justifyContent: 'center', background: '#334155' }}>
+                        <label
+                          style={{
+                            ...toolBtnStyle,
+                            justifyContent: 'center',
+                            background: '#334155',
+                          }}
+                        >
                           <Upload size={14} /> Choisir une image (Template)
                           <input
                             type="file"
@@ -1238,46 +1562,62 @@ const handleExportDeckPdf = async () => {
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (!file) return;
-                              const reader = new FileReader();
-                              reader.onload = () => {
-                                if (typeof reader.result === 'string') {
-                                  updateFieldProps(selectedField.id, { defaultValue: reader.result });
-                                }
-                              };
-                              reader.onerror = () => setErrorBanner("Impossible de lire le fichier image.");
-                              reader.readAsDataURL(file);
+                              requestImageCrop(
+                                file,
+                                selectedField.width / Math.max(1, selectedField.height),
+                                (dataUrl) =>
+                                  updateFieldProps(selectedField.id, { defaultValue: dataUrl }),
+                              );
+                              e.target.value = '';
                             }}
                             style={{ display: 'none' }}
                           />
                         </label>
                       )}
                       <div>
-                        <label style={labelStyle}>Opacité ({Math.round((selectedField.opacity ?? 1) * 100)}%)</label>
+                        <label style={labelStyle}>
+                          Opacité ({Math.round((selectedField.opacity ?? 1) * 100)}%)
+                        </label>
                         <input
                           type="range"
                           min={0.1}
                           max={1}
                           step={0.05}
                           value={selectedField.opacity ?? 1}
-                          onChange={(e) => updateFieldProps(selectedField.id, { opacity: Number(e.target.value) })}
+                          onChange={(e) =>
+                            updateFieldProps(selectedField.id, { opacity: Number(e.target.value) })
+                          }
                           style={{ width: '100%' }}
                         />
                       </div>
                       <div>
                         <label style={labelStyle}>
-                          {selectedField.editableInCard === false ? 'Image (URL / Template)' : 'Image par défaut (URL)'}
+                          {selectedField.editableInCard === false
+                            ? 'Image (URL / Template)'
+                            : 'Image par défaut (URL)'}
                         </label>
                         <input
                           type="text"
                           placeholder="https://..."
-                          value={selectedField.defaultValue?.startsWith('data:') ? '' : (selectedField.defaultValue || '')}
-                          onChange={(e) => updateFieldProps(selectedField.id, { defaultValue: e.target.value })}
+                          value={
+                            selectedField.defaultValue?.startsWith('data:')
+                              ? ''
+                              : selectedField.defaultValue || ''
+                          }
+                          onChange={(e) =>
+                            updateFieldProps(selectedField.id, { defaultValue: e.target.value })
+                          }
                           style={inputStyle}
                         />
                         {selectedField.editableInCard === false && selectedField.defaultValue && (
                           <button
                             onClick={() => updateFieldProps(selectedField.id, { defaultValue: '' })}
-                            style={{ ...smallBtnStyle, background: '#7f1d1d', color: '#fecaca', marginTop: '6px' }}
+                            style={{
+                              ...smallBtnStyle,
+                              background: '#7f1d1d',
+                              color: '#fecaca',
+                              marginTop: '6px',
+                            }}
                           >
                             Retirer l'image (Template)
                           </button>
@@ -1297,7 +1637,11 @@ const handleExportDeckPdf = async () => {
                           <input
                             type="number"
                             value={selectedField.fontSize || 16}
-                            onChange={(e) => updateFieldProps(selectedField.id, { fontSize: Number(e.target.value) })}
+                            onChange={(e) =>
+                              updateFieldProps(selectedField.id, {
+                                fontSize: Number(e.target.value),
+                              })
+                            }
                             style={inputStyle}
                           />
                         </div>
@@ -1305,7 +1649,9 @@ const handleExportDeckPdf = async () => {
                           <label style={labelStyle}>Alignement</label>
                           <select
                             value={selectedField.align || 'left'}
-                            onChange={(e) => updateFieldProps(selectedField.id, { align: e.target.value as any })}
+                            onChange={(e) =>
+                              updateFieldProps(selectedField.id, { align: e.target.value as any })
+                            }
                             style={inputStyle}
                           >
                             <option value="left">Gauche</option>
@@ -1315,35 +1661,46 @@ const handleExportDeckPdf = async () => {
                         </div>
                       </div>
                       <div>
-                        <label style={labelStyle}>Couleur du texte</label>
-                        <input
-                          type="color"
-                          value={selectedField.color || '#ffffff'}
-                          onChange={(e) => updateFieldProps(selectedField.id, { color: e.target.value })}
-                          style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
-                        />
+                        <label style={labelStyle}>Police</label>
+                        <select
+                          value={selectedField.fontFamily || 'Arial'}
+                          onChange={(e) => {
+                            const family = e.target.value;
+                            updateFieldProps(selectedField.id, { fontFamily: family });
+                            loadGoogleFont(family).then(() => stageRef.current?.batchDraw());
+                          }}
+                          style={inputStyle}
+                        >
+                          <option value="Arial">Arial (système)</option>
+                          {DEFAULT_GAMING_FONTS.map((font) => (
+                            <option key={font.family} value={font.family}>
+                              {font.family}
+                            </option>
+                          ))}
+                        </select>
                       </div>
+                      <ColorPicker
+                        label="Couleur du texte"
+                        value={selectedField.color || '#ffffff'}
+                        onChange={(color) => updateFieldProps(selectedField.id, { color })}
+                      />
                     </>
                   )}
 
                   {selectedField.type === 'box' && (
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <div style={{ flex: 1 }}>
-                        <label style={labelStyle}>Remplissage</label>
-                        <input
-                          type="color"
+                        <ColorPicker
+                          label="Remplissage"
                           value={selectedField.fill || '#0f172a'}
-                          onChange={(e) => updateFieldProps(selectedField.id, { fill: e.target.value })}
-                          style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                          onChange={(fill) => updateFieldProps(selectedField.id, { fill })}
                         />
                       </div>
                       <div style={{ flex: 1 }}>
-                        <label style={labelStyle}>Contour</label>
-                        <input
-                          type="color"
+                        <ColorPicker
+                          label="Contour"
                           value={selectedField.color || '#334155'}
-                          onChange={(e) => updateFieldProps(selectedField.id, { color: e.target.value })}
-                          style={{ width: '100%', height: '34px', border: 'none', background: 'none' }}
+                          onChange={(color) => updateFieldProps(selectedField.id, { color })}
                         />
                       </div>
                     </div>
@@ -1360,7 +1717,9 @@ return {
   visible: true
 };`}
                       value={selectedField.script || ''}
-                      onChange={(e) => updateFieldProps(selectedField.id, { script: e.target.value })}
+                      onChange={(e) =>
+                        updateFieldProps(selectedField.id, { script: e.target.value })
+                      }
                       style={{
                         ...inputStyle,
                         fontFamily: 'monospace',
@@ -1377,13 +1736,26 @@ return {
                 </div>
               ) : (
                 <p style={{ color: '#64748b', fontSize: '14px', marginTop: '16px' }}>
-                  Cliquez sur un élément de la carte pour le déplacer, le redimensionner ou modifier ses options.
+                  Cliquez sur un élément de la carte pour le déplacer, le redimensionner ou modifier
+                  ses options.
                 </p>
               )}
             </>
           )}
         </ErrorBoundary>
       </div>
+
+      {cropRequest && (
+        <ImageCropper
+          imageSrc={cropRequest.src}
+          aspectRatio={cropRequest.aspectRatio}
+          onCropComplete={(dataUrl) => {
+            cropRequest.onCropped(dataUrl);
+            setCropRequest(null);
+          }}
+          onCancel={() => setCropRequest(null)}
+        />
+      )}
     </div>
   );
 }

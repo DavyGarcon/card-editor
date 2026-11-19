@@ -20,7 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-
 The documentation of Card-editor is released under the [CC-By-SA](https://creativecommons.org/licenses/by-sa/4.0/deed.en) license.
 
 This software is under the **Beerware agreement** : if you use it and if you like it, feel free to offer me a beer !
