@@ -117,6 +117,16 @@ export default function App() {
     }
   }, [currentStyleKey, pack.styles]);
   const resolvedStyle = styleResolution.style;
+  // Template mode previews the template's defaults, not the active card's data.
+  const previewCardValues = useMemo(
+    () =>
+      mode === 'template'
+        ? Object.fromEntries(
+            resolvedStyle.fields.map((field) => [field.id, field.defaultValue ?? '']),
+          )
+        : (activeCard?.values ?? {}),
+    [mode, resolvedStyle.fields, activeCard],
+  );
   const bannerMessage =
     errorBanner ?? (dismissedStyleError === styleResolution.error ? null : styleResolution.error);
 
@@ -664,7 +674,10 @@ export default function App() {
             <PenTool size={14} /> Cartes
           </button>
           <button
-            onClick={() => setMode('template')}
+            onClick={() => {
+              setActiveStyleKey(currentStyleKey);
+              setMode('template');
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -741,68 +754,73 @@ export default function App() {
           )}
         </div>
 
-        <button
-          onClick={addNewCard}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            padding: '8px',
-            background: '#334155',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-          }}
-        >
-          <Plus size={16} /> Ajouter une Carte
-        </button>
-
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-          }}
-        >
-          {cards.map((c) => (
-            <div
-              key={c.id}
-              onClick={() => {
-                setActiveCardId(c.id);
-                setActiveStyleKey(c.styleKey);
-              }}
+        {/* Card mode: deck management is hidden while editing the template. */}
+        {mode === 'card' && (
+          <>
+            <button
+              onClick={addNewCard}
               style={{
-                padding: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '8px',
+                background: '#334155',
+                color: '#fff',
+                border: 'none',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: c.id === activeCard.id ? '#334155' : '#1e293b',
               }}
             >
-              <div>
-                <div style={{ fontSize: '14px' }}>{c.values.title || 'Sans titre'}</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                  {pack.styles.find((s) => s.key === c.styleKey)?.name || c.styleKey}
-                </div>
-              </div>
-              {cards.length > 1 && (
-                <Trash2
-                  size={16}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCards(cards.filter((item) => item.id !== c.id));
+              <Plus size={16} /> Ajouter une Carte
+            </button>
+
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              {cards.map((c) => (
+                <div
+                  key={c.id}
+                  onClick={() => {
+                    setActiveCardId(c.id);
+                    setActiveStyleKey(c.styleKey);
                   }}
-                />
-              )}
+                  style={{
+                    padding: '10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: c.id === activeCard.id ? '#334155' : '#1e293b',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '14px' }}>{c.values.title || 'Sans titre'}</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      {pack.styles.find((s) => s.key === c.styleKey)?.name || c.styleKey}
+                    </div>
+                  </div>
+                  {cards.length > 1 && (
+                    <Trash2
+                      size={16}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCards(cards.filter((item) => item.id !== c.id));
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
 
       {/* RIGHT: Interactive Konva Stage (card / template preview) */}
@@ -879,22 +897,32 @@ export default function App() {
                     (a, b) => (a.field.z ?? a.index) - (b.field.z ?? b.index) || a.index - b.index,
                   )
                   .map(({ field }) => {
+                    const isTemplateMode = mode === 'template';
                     const isCardEditable = field.editableInCard !== false;
-                    const rawValue = isCardEditable
+                    const cardRawValue = isCardEditable
                       ? (activeCard?.values[field.id] ?? field.defaultValue ?? '')
                       : (field.defaultValue ?? '');
-                    const allCardValues = isCardEditable
-                      ? activeCard?.values || {}
-                      : { ...(activeCard?.values || {}), [field.id]: field.defaultValue ?? '' };
-
                     return (
                       <DraggableFieldNode
                         key={field.id}
                         field={field}
-                        rawValue={rawValue}
-                        allCardValues={allCardValues}
+                        rawValue={
+                          isTemplateMode
+                            ? (previewCardValues[field.id] ?? field.defaultValue ?? '')
+                            : cardRawValue
+                        }
+                        allCardValues={
+                          isTemplateMode
+                            ? previewCardValues
+                            : isCardEditable
+                              ? (activeCard?.values ?? {})
+                              : {
+                                  ...(activeCard?.values ?? {}),
+                                  [field.id]: field.defaultValue ?? '',
+                                }
+                        }
                         resolvedStyle={resolvedStyle}
-                        isDesignMode={mode === 'template'}
+                        isDesignMode={isTemplateMode}
                         isSelected={selectedFieldId === field.id}
                         onSelect={() => setSelectedFieldId(field.id)}
                         onChange={(updates) => updateFieldProps(field.id, updates)}
@@ -928,32 +956,36 @@ export default function App() {
           </div>
         </ErrorBoundary>
 
-        {/* Bottom Export Toolbar */}
+        {/* Bottom toolbar: only the controls for the active mode. */}
         <div className="io-toolbar">
-          <div className="io-group" role="group" aria-label="Rendu des cartes">
-            <span className="io-group-label">Rendu</span>
-            <button
-              onClick={handleExportDeckPdf}
-              disabled={isExportingPdf}
-              style={{
-                ...toolBtnStyle,
-                background: isExportingPdf ? '#475569' : '#6366f1',
-                fontWeight: 'bold',
-              }}
-            >
-              <Printer size={16} />
-              {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
-            </button>
-            <button
-              onClick={exportPNG}
-              style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
-            >
-              <Download size={16} /> Carte PNG
-            </button>
-          </div>
-
-          <DeckIOControls cardCount={cards.length} onSave={saveDeck} onLoad={loadDeck} />
-          <TemplateIOControls onSave={saveTemplate} onLoad={loadTemplate} />
+          {mode === 'card' ? (
+            <>
+              <div className="io-group" role="group" aria-label="Rendu des cartes">
+                <span className="io-group-label">Rendu</span>
+                <button
+                  onClick={handleExportDeckPdf}
+                  disabled={isExportingPdf}
+                  style={{
+                    ...toolBtnStyle,
+                    background: isExportingPdf ? '#475569' : '#6366f1',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  <Printer size={16} />
+                  {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
+                </button>
+                <button
+                  onClick={exportPNG}
+                  style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
+                >
+                  <Download size={16} /> Carte PNG
+                </button>
+              </div>
+              <DeckIOControls cardCount={cards.length} onSave={saveDeck} onLoad={loadDeck} />
+            </>
+          ) : (
+            <TemplateIOControls onSave={saveTemplate} onLoad={loadTemplate} />
+          )}
 
           <button
             onClick={resetProject}

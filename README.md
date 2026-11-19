@@ -21,7 +21,8 @@
   - **Multi-Card A4 PDF Print Sheet**: Automatically arranges your entire deck onto A4 pages (`300 DPI`) with proportional real-world millimeter sizing and corner crop marks.
   - **Portable JSON Files**: Save, share, and reload template packs and decks independently.
   - Exports render from a detached Konva stage, so the live editor is never mutated and jsPDF is loaded on demand.
-- **Responsive Layout**: Deck/style controls and the inspector sit in a left column with the card/template preview on the right; on tablets and phones the preview moves below the details.
+- **Mode-Focused Workspace**: Card Mode shows only deck management, card content fields, and card PNG/PDF + deck file controls. Template Mode shows only style/layer editing and template file controls. The template preview uses field defaults instead of a specific card's values.
+- **Responsive Layout**: Deck/style controls and the inspector sit in a left column with the card/template preview on the right; on phones the preview moves below the details.
 - **Resilient Error Handling**: Granular React Error Boundaries isolate the canvas, inspector, and root UI, while `try/catch` guards protect JSON imports, script execution, and file exports.
 
 ---
