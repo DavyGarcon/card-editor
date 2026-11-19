@@ -22,3 +22,7 @@ export { ImageCropper, type ImageCropperProps } from './ImageCropper';
 
 // Spectrum & Palette Color Picker (JSColor & SimpleColorPicker replacement)
 export { ColorPicker, DEFAULT_CARD_SWATCHES, type ColorPickerProps } from './ColorPicker';
+
+// Separate save/load controls for decks and template packs
+export { DeckIOControls, type DeckIOControlsProps } from './DeckIOControls';
+export { TemplateIOControls, type TemplateIOControlsProps } from './TemplateIOControls';

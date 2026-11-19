@@ -14,14 +14,14 @@
 - **Style Inheritance (`basedOn`)**: Bundle multiple card layouts (e.g., _Base Card_, _Spell_, _Weapon_, _Legendary_) inside a single Template Pack JSON. Child styles inherit dimensions, colors, and layers from parent styles and override only what changes.
 - **Dynamic JavaScript Render Scripts**: Attach custom JS logic to any layer (`script`) to dynamically alter text, colors, positions, or conditional visibility (`visible`) based on the card's current field values.
 - **Custom Artwork Support**: Upload local images (stored as Data URLs) or link external image URLs with adjustable opacity and bounding frames. Uploads open an interactive cropper; inspector colors use a palette picker, and layers can use dynamically loaded Google Fonts.
-- **Autosave & History**: The pack, deck, and editor state are saved to `localStorage` automatically. Undo/redo (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`) covers 50 document snapshots.
-- **Portable Projects**: Export/import a complete project (template pack **and** deck) as JSON, or just the template pack. All imports are validated and rich-text HTML is sanitized before rendering. `Ctrl/Cmd+S` saves the project.
+- **Autosave & History**: The template and deck autosave to **two independent `localStorage` keys**. Undo/redo (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`) covers 50 document snapshots.
+- **Separate Portable Files**: The template pack saves to `*-template.json` and the deck saves to `*-deck.json`, each with its own load button group. All imports are validated and rich-text HTML is sanitized before rendering. `Ctrl/Cmd+S` saves the deck in Card mode and the template in Template mode.
 - **Print-Ready Exports**:
   - **Single Card PNG**: High-DPI (`2x`) transparent/crisp PNG export of the active card.
   - **Multi-Card A4 PDF Print Sheet**: Automatically arranges your entire deck onto A4 pages (`300 DPI`) with proportional real-world millimeter sizing and corner crop marks.
-  - **Portable JSON Templates**: Save, share, and reload template packs anytime.
+  - **Portable JSON Files**: Save, share, and reload template packs and decks independently.
   - Exports render from a detached Konva stage, so the live editor is never mutated and jsPDF is loaded on demand.
-- **Responsive Layout**: The three-column workspace stacks vertically on tablets and phones.
+- **Responsive Layout**: Deck/style controls and the inspector sit in a left column with the card/template preview on the right; on tablets and phones the preview moves below the details.
 - **Resilient Error Handling**: Granular React Error Boundaries isolate the canvas, inspector, and root UI, while `try/catch` guards protect JSON imports, script execution, and file exports.
 
 ---
@@ -159,6 +159,44 @@ Every item in `fields` defines both a **canvas layer** and a **card editor input
 
 ---
 
+## Saving & Loading
+
+Templates and decks are intentionally separate — different files, different autosave keys, different toolbar groups.
+
+| Content                        | Downloaded file             | Autosave key                |
+| ------------------------------ | --------------------------- | --------------------------- |
+| Template pack (styles, layers) | `<pack-name>-template.json` | `modern-geckos-template-v1` |
+| Deck (cards and their values)  | `<pack-name>-deck.json`     | `modern-geckos-deck-v1`     |
+
+Template file:
+
+```json
+{
+  "format": "modern-geckos-template",
+  "version": 1,
+  "pack": { "name": "Fantasy RPG Pack", "styles": [], "activeStyleKey": "base" },
+  "activeStyleKey": "base",
+  "mode": "card"
+}
+```
+
+Deck file:
+
+```json
+{
+  "format": "modern-geckos-deck",
+  "version": 1,
+  "name": "Mon deck",
+  "template": { "name": "Fantasy RPG Pack", "styleKeys": ["base"] },
+  "cards": [{ "id": "1", "styleKey": "base", "values": { "title": "Boule de Feu" } }],
+  "activeCardId": "1"
+}
+```
+
+Load the **template first**: a deck only stores `styleKey` references, so the app rejects cards whose style is not present in the currently loaded template. Legacy unwrapped packs, single-style templates, bare `{ "cards": [...] }` decks, and old combined project files are still accepted on import.
+
+---
+
 ## Dynamic JavaScript Render Scripts (`script`)
 
 Any field can include a `script` string to dynamically compute visual overrides when a card is rendered.
@@ -197,12 +235,19 @@ Scripts run in a restricted interpreter: only plain data, arithmetic/logic opera
 src/
 ├── components/
 │   ├── DraggableFieldNode.tsx # Canvas renderer for all field types (drag/resize/select)
+│   ├── DeckIOControls.tsx     # Deck save/load buttons
 │   ├── ErrorBoundary.tsx      # React Error Boundary with recovery UI
 │   ├── ImageCropper.tsx       # Interactive image cropper
 │   ├── ColorPicker.tsx        # Spectrum & palette color picker
 │   ├── RichTextEditor.tsx     # ContentEditable toolbar + HTML-to-segments parser
 │   ├── RichTextNode.tsx       # Konva node that draws rich text as styled runs
+│   ├── TemplateIOControls.tsx # Template save/load buttons
 │   └── index.tsx              # Component barrel exports
+├── io/
+│   ├── deckIO.ts              # Deck file format + deck autosave
+│   ├── fileIO.ts              # File reading / download helpers
+│   ├── formats.ts             # Format identifiers and filename helpers
+│   └── templateIO.ts          # Template file format + template autosave
 ├── data/
 │   └── starterPack.ts         # Default template pack & example deck
 ├── hooks/
@@ -215,7 +260,6 @@ src/
 │   ├── cardRenderer.ts        # Detached Konva renderer for PNG/PDF exports
 │   ├── FontLoader.ts          # Dynamic Google Fonts loader
 │   ├── pdfExporter.ts         # A4 multi-card print layout & crop marks (jsPDF)
-│   ├── persistence.ts         # localStorage autosave
 │   ├── richTextLayout.ts      # Word-wrap & alignment for styled rich-text runs
 │   ├── sanitize.ts            # DOMPurify HTML sanitization
 │   ├── scriptEvaluator.ts     # Restricted field script evaluation & override sanitizing

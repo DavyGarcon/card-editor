@@ -8,6 +8,8 @@ import {
   DEFAULT_GAMING_FONTS,
   ImageCropper,
   ColorPicker,
+  DeckIOControls,
+  TemplateIOControls,
 } from './components';
 import {
   Download,
@@ -21,17 +23,10 @@ import {
   Square,
   List,
   Image as ImageIcon,
-  FileJson,
   GitBranch,
   AlertCircle,
 } from 'lucide-react';
-import {
-  CardStyleDefinition,
-  CardTemplatePack,
-  FieldType,
-  SelectOption,
-  TemplateField,
-} from './types/template';
+import { CardStyleDefinition, FieldType, SelectOption, TemplateField } from './types/template';
 import { resolveCardStyle } from './utils/styleResolver';
 import { evaluateFieldScript } from './utils/scriptEvaluator';
 import { DraggableFieldNode } from './components/DraggableFieldNode';
@@ -43,30 +38,58 @@ import {
   getGuides,
   GuideLineRender,
 } from './utils/snapGuides';
-import { Printer, Undo2, Redo2, Save, RotateCcw } from 'lucide-react';
+import { Printer, Undo2, Redo2, RotateCcw } from 'lucide-react';
 import { exportDeckToPdf } from './utils/pdfExporter';
 import { renderCardToDataUrl } from './utils/cardRenderer';
-import { validateDeck, validateTemplatePack } from './utils/templateValidation';
-import { clearProject, loadProject, saveProject } from './utils/persistence';
+import {
+  clearTemplateSession,
+  loadTemplateFile,
+  loadTemplateSession,
+  saveTemplateFile,
+  saveTemplateSession,
+} from './io/templateIO';
+import {
+  clearDeckSession,
+  loadDeckFile,
+  loadDeckSession,
+  saveDeckFile,
+  saveDeckSession,
+} from './io/deckIO';
 import { useUndoableDocument } from './hooks/useUndoableDocument';
 import { INITIAL_CARDS, INITIAL_PACK } from './data/starterPack';
 
 export default function App() {
-  const savedProject = useMemo(() => loadProject({ pack: INITIAL_PACK, cards: INITIAL_CARDS }), []);
+  const savedTemplate = useMemo(
+    () =>
+      loadTemplateSession({
+        pack: INITIAL_PACK,
+        activeStyleKey: INITIAL_PACK.activeStyleKey || 'spell_fire',
+        mode: 'card',
+      }),
+    [],
+  );
+  const savedDeck = useMemo(
+    () =>
+      loadDeckSession(
+        { cards: INITIAL_CARDS, activeCardId: INITIAL_CARDS[0]?.id },
+        INITIAL_PACK.styles,
+      ),
+    [],
+  );
   const { pack, setPack, cards, setCards, setDocument, undo, redo, canUndo, canRedo } =
     useUndoableDocument({
-      pack: savedProject.pack,
-      cards: savedProject.cards,
+      pack: savedTemplate.pack,
+      cards: savedDeck.cards,
     });
   const [activeStyleKey, setActiveStyleKey] = useState<string>(
-    savedProject.activeStyleKey || INITIAL_PACK.activeStyleKey || 'spell_fire',
+    savedTemplate.activeStyleKey || INITIAL_PACK.activeStyleKey || 'spell_fire',
   );
-  const [mode, setMode] = useState<'card' | 'template'>(savedProject.mode || 'card');
+  const [mode, setMode] = useState<'card' | 'template'>(savedTemplate.mode || 'card');
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>('title');
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [dismissedStyleError, setDismissedStyleError] = useState<string | null>(null);
   const [draggedComponentId, setDraggedComponentId] = useState<string | null>(null);
-  const [activeCardId, setActiveCardId] = useState<string>(savedProject.activeCardId || '1');
+  const [activeCardId, setActiveCardId] = useState<string>(savedDeck.activeCardId || '1');
   const [cropRequest, setCropRequest] = useState<{
     src: string;
     aspectRatio: number;
@@ -97,13 +120,26 @@ export default function App() {
   const bannerMessage =
     errorBanner ?? (dismissedStyleError === styleResolution.error ? null : styleResolution.error);
 
+  // Independent autosave slots: a broken template file cannot discard the deck.
+  useEffect(() => {
+    const timer = window.setTimeout(() => saveTemplateSession({ pack, activeStyleKey, mode }), 400);
+    return () => window.clearTimeout(timer);
+  }, [pack, activeStyleKey, mode]);
+
   useEffect(() => {
     const timer = window.setTimeout(
-      () => saveProject({ pack, cards, activeCardId, activeStyleKey, mode }),
+      () =>
+        saveDeckSession({
+          cards,
+          activeCardId,
+          name: pack.name,
+          templateName: pack.name,
+          styleKeys: pack.styles.map((style) => style.key),
+        }),
       400,
     );
     return () => window.clearTimeout(timer);
-  }, [pack, cards, activeCardId, activeStyleKey, mode]);
+  }, [cards, activeCardId, pack]);
 
   const templateFontNames = useMemo(
     () =>
@@ -397,85 +433,63 @@ export default function App() {
     }
   };
 
-  const exportPackJSON = () => {
+  // Template pack and deck are saved to / loaded from independent files.
+  const saveTemplate = useCallback(() => {
     try {
-      const payload: CardTemplatePack = { ...pack, activeStyleKey: currentStyleKey };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.download = `${pack.name.toLowerCase().replace(/\s+/g, '-')}.json`;
-      link.href = URL.createObjectURL(blob);
-      link.click();
+      saveTemplateFile({ pack, activeStyleKey: currentStyleKey, mode });
+      setErrorBanner(null);
     } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export JSON.");
+      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export du template.");
     }
-  };
+  }, [pack, currentStyleKey, mode]);
 
-  const readJsonFile = (file: File, onParsed: (parsed: unknown) => void) => {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
+  const loadTemplate = useCallback(
+    async (file: File) => {
       try {
-        onParsed(JSON.parse(ev.target?.result as string));
+        const session = await loadTemplateFile(file);
+        setPack(session.pack);
+        setActiveStyleKey(session.activeStyleKey);
+        setMode(session.mode);
         setErrorBanner(null);
       } catch (err) {
-        setErrorBanner(err instanceof Error ? err.message : 'Fichier JSON invalide.');
+        setErrorBanner(err instanceof Error ? err.message : 'Fichier template invalide.');
       }
-    };
-    reader.onerror = () => setErrorBanner('Impossible de lire le fichier.');
-    reader.readAsText(file);
-  };
+    },
+    [setPack],
+  );
 
-  const importPackJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    readJsonFile(file, (parsed) => {
-      const raw = parsed as Record<string, unknown>;
-      // Support both multi-style packs and the legacy single-style format.
-      const candidate =
-        Array.isArray(raw?.fields) && !Array.isArray(raw?.styles)
-          ? {
-              name: raw.name || 'Template Importé',
-              activeStyleKey: 'default',
-              styles: [{ key: 'default', name: raw.name || 'Défaut', ...raw }],
-            }
-          : parsed;
-      const imported = validateTemplatePack(candidate);
-      setPack(imported);
-      const firstKey = imported.activeStyleKey || imported.styles[0].key;
-      setActiveStyleKey(firstKey);
-      setErrorBanner(null);
-    });
-  };
-
-  const exportProjectJSON = useCallback(() => {
+  const saveDeck = useCallback(() => {
     try {
-      const payload = { version: 1, pack: { ...pack, activeStyleKey: currentStyleKey }, cards };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.download = `${pack.name.toLowerCase().replace(/\s+/g, '-')}-projet.json`;
-      link.href = URL.createObjectURL(blob);
-      link.click();
-    } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export du projet.");
-    }
-  }, [pack, cards, currentStyleKey]);
-
-  const importProjectJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    readJsonFile(file, (parsed) => {
-      const raw = parsed as Record<string, unknown>;
-      const importedPack = validateTemplatePack(raw.pack);
-      const importedCards = validateDeck(raw.cards, importedPack.styles);
-      setDocument({ pack: importedPack, cards: importedCards });
-      const firstKey = importedPack.activeStyleKey || importedPack.styles[0].key;
-      setActiveStyleKey(firstKey);
-      setActiveCardId(importedCards[0]?.id || '1');
+      saveDeckFile({
+        cards,
+        activeCardId,
+        name: pack.name,
+        templateName: pack.name,
+        styleKeys: pack.styles.map((style) => style.key),
+      });
       setErrorBanner(null);
-    });
-  };
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export du deck.");
+    }
+  }, [cards, activeCardId, pack]);
+
+  const loadDeck = useCallback(
+    async (file: File) => {
+      try {
+        const session = await loadDeckFile(file, pack.styles);
+        setCards(session.cards);
+        setActiveCardId(session.activeCardId || session.cards[0]?.id || '1');
+        setErrorBanner(null);
+      } catch (err) {
+        setErrorBanner(err instanceof Error ? err.message : 'Fichier deck invalide.');
+      }
+    },
+    [pack.styles, setCards],
+  );
 
   const resetProject = () => {
-    clearProject();
+    clearTemplateSession();
+    clearDeckSession();
     setDocument({ pack: INITIAL_PACK, cards: INITIAL_CARDS });
     setActiveStyleKey(INITIAL_PACK.activeStyleKey || 'spell_fire');
     setActiveCardId('1');
@@ -574,17 +588,19 @@ export default function App() {
         event.preventDefault();
         redo();
       } else if (key === 's') {
+        // Ctrl+S follows the active workspace: deck in Card mode, template in Template mode.
         event.preventDefault();
-        exportProjectJSON();
+        if (mode === 'template') saveTemplate();
+        else saveDeck();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [undo, redo, exportProjectJSON]);
+  }, [undo, redo, saveTemplate, saveDeck, mode]);
 
   return (
     <div className="app-shell">
-      {/* LEFT SIDEBAR: Deck & Style Selector */}
+      {/* LEFT: Deck & Style Selector */}
       <div className="sidebar-left">
         <div
           style={{
@@ -789,7 +805,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* CENTER: Interactive Konva Stage */}
+      {/* RIGHT: Interactive Konva Stage (card / template preview) */}
       <div className="stage-area">
         {bannerMessage && (
           <div
@@ -913,65 +929,44 @@ export default function App() {
         </ErrorBoundary>
 
         {/* Bottom Export Toolbar */}
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button
-            onClick={handleExportDeckPdf}
-            disabled={isExportingPdf}
-            style={{
-              ...toolBtnStyle,
-              background: isExportingPdf ? '#475569' : '#6366f1',
-              fontWeight: 'bold',
-            }}
-          >
-            <Printer size={16} />
-            {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
-          </button>
+        <div className="io-toolbar">
+          <div className="io-group" role="group" aria-label="Rendu des cartes">
+            <span className="io-group-label">Rendu</span>
+            <button
+              onClick={handleExportDeckPdf}
+              disabled={isExportingPdf}
+              style={{
+                ...toolBtnStyle,
+                background: isExportingPdf ? '#475569' : '#6366f1',
+                fontWeight: 'bold',
+              }}
+            >
+              <Printer size={16} />
+              {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
+            </button>
+            <button
+              onClick={exportPNG}
+              style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
+            >
+              <Download size={16} /> Carte PNG
+            </button>
+          </div>
+
+          <DeckIOControls cardCount={cards.length} onSave={saveDeck} onLoad={loadDeck} />
+          <TemplateIOControls onSave={saveTemplate} onLoad={loadTemplate} />
 
           <button
-            onClick={exportPNG}
-            style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
-          >
-            <Download size={16} /> Exporter Carte PNG
-          </button>
-          <button onClick={exportPackJSON} style={toolBtnStyle}>
-            <FileJson size={16} /> Pack JSON
-          </button>
-          <label style={toolBtnStyle}>
-            <Upload size={16} /> Charger Pack
-            <input
-              type="file"
-              accept=".json"
-              onChange={importPackJSON}
-              style={{ display: 'none' }}
-            />
-          </label>
-          <button
-            onClick={exportProjectJSON}
-            style={toolBtnStyle}
-            title="Sauvegarder le projet (Ctrl+S)"
-          >
-            <Save size={16} /> Projet JSON
-          </button>
-          <label style={toolBtnStyle}>
-            <Upload size={16} /> Charger Projet
-            <input
-              type="file"
-              accept=".json"
-              onChange={importProjectJSON}
-              style={{ display: 'none' }}
-            />
-          </label>
-          <button
             onClick={resetProject}
-            style={{ ...toolBtnStyle, background: '#7f1d1d' }}
-            title="Réinitialiser et effacer la sauvegarde locale"
+            className="io-button"
+            style={{ background: '#7f1d1d', borderColor: '#991b1b' }}
+            title="Réinitialiser et effacer les deux sauvegardes locales"
           >
             <RotateCcw size={16} /> Réinitialiser
           </button>
         </div>
       </div>
 
-      {/* RIGHT SIDEBAR: Context-Aware Inspector */}
+      {/* LEFT: Context-Aware Inspector (below deck & styles) */}
       <div className="sidebar-right">
         <ErrorBoundary fallbackTitle="Erreur dans l'inspecteur">
           {mode === 'card' ? (
