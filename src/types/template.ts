@@ -1,4 +1,4 @@
-export type FieldType = 'text' | 'box' | 'select' | 'image';
+export type FieldType = 'text' | 'box' | 'select' | 'image' | 'richtext';
 
 export interface SelectOption {
   value: string;
@@ -14,6 +14,7 @@ export interface TemplateField {
   width: number;
   height: number;
   z?: number;
+  /** For "richtext" fields this holds an HTML string (bold/italic/underline/lists). */
   defaultValue?: string;
   // Text & Select styling
   fontSize?: number;

@@ -8,7 +8,8 @@
 
 * **Dual-Mode Workspace**:
   * **Template Designer Mode**: Drag, resize, and snap text boxes, frames, dropdown-driven layers, and image slots directly on the HTML5 canvas.
-  * **Card Editor Mode**: Automatically generates tailored input forms (text fields, multi-line textareas, dropdown menus, and image uploaders) from the active template style.
+  * **Card Editor Mode**: Automatically generates tailored input forms (text fields, multi-line textareas, dropdown menus, image uploaders, and a rich-text editor) from the active template style.
+* **Rich Text Layers**: A `richtext` field type with an inline toolbar (bold, italic, underline, bullet lists, and game-symbol tokens). Content is stored as HTML and rendered on the Konva canvas with matching styling, word wrapping, and alignment.
 * **Magnetic Snapping & Alignment Guides**: Snaps layers automatically to canvas edges, centerlines, and neighboring elements with visual alignment guides while dragging.
 * **Style Inheritance (`basedOn`)**: Bundle multiple card layouts (e.g., *Base Card*, *Spell*, *Weapon*, *Legendary*) inside a single Template Pack JSON. Child styles inherit dimensions, colors, and layers from parent styles and override only what changes.
 * **Dynamic JavaScript Render Scripts**: Attach custom JS logic to any layer (`script`) to dynamically alter text, colors, positions, or conditional visibility (`visible`) based on the card's current field values.
@@ -113,7 +114,7 @@ Every item in `fields` defines both a **canvas layer** and a **card editor input
 | :--- | :--- | :--- | :--- |
 | `id` | `string` | Yes | Unique field key used to store values in `card.values[id]`. |
 | `label` | `string` | Yes | Label displayed in the Inspector and Card Editor form. |
-| `type` | `"text" \| "box" \| "select" \| "image"` | Yes | Determines rendering behavior and input widget type. |
+| `type` | `"text" \| "box" \| "select" \| "image" \| "richtext"` | Yes | Determines rendering behavior and input widget type. |
 | `x` | `number` | Yes | Horizontal position in pixels from the left edge. |
 | `y` | `number` | Yes | Vertical position in pixels from the top edge. |
 | `width` | `number` | Yes | Bounding box width in pixels. |
@@ -137,6 +138,10 @@ Every item in `fields` defines both a **canvas layer** and a **card editor input
   * `defaultValue` (`string`, optional): Initial option `value` for new cards.
   * `fontSize`, `color`, `align`: Same typography options as `"text"`.
 
+* **`type: "richtext"`** (Renders formatted HTML text on canvas + `RichTextEditor` in Card Mode)
+  * Uses the same `fontSize`, `color`, and `align` options as `"text"`.
+  * Stores HTML in `card.values[id]` (e.g. `<b>Fire</b> damage`). Supports `<b>/<strong>`, `<i>/<em>`, `<u>`, `<br>`, and `<ul>/<li>`.
+  * A `script` can override the rendered HTML by returning `{ text: "<b>...</b>" }`.
 * **`type: "image"`** (Renders artwork on canvas + File Upload / URL input in Card Mode)
   * `src` (`string`, optional): Default fallback image URL or Data URL.
   * `opacity` (`number`, default `1`): Layer transparency from `0` to `1`.
@@ -176,9 +181,19 @@ Supported override keys: `text`, `visible`, `color`, `fill`, `x`, `y`, `width`, 
 ```text
 src/
 ├── components/
-│   └── ErrorBoundary.tsx      # React Error Boundary with recovery UI
+│   ├── DraggableFieldNode.tsx # Canvas renderer for all field types (drag/resize/select)
+│   ├── ErrorBoundary.tsx      # React Error Boundary with recovery UI
+│   ├── ImageCropper.tsx       # Interactive image cropper
+│   ├── ColorPicker.tsx        # Spectrum & palette color picker
+│   ├── RichTextEditor.tsx     # ContentEditable toolbar + HTML-to-segments parser
+│   ├── RichTextNode.tsx       # Konva node that draws rich text as styled runs
+│   └── index.tsx              # Component barrel exports
+├── types/
+│   └── template.ts            # Template pack, style, field & card data types
 ├── utils/
+│   ├── FontLoader.ts          # Dynamic Google Fonts loader
 │   ├── pdfExporter.ts         # A4 multi-card print layout & crop marks (jsPDF)
+│   ├── richTextLayout.ts      # Word-wrap & alignment for styled rich-text runs
 │   ├── scriptEvaluator.ts     # Safe sandboxed evaluation for field JS scripts
 │   ├── snapGuides.ts          # Magnetic alignment & visual guide calculations
 │   └── styleResolver.ts       # Recursive `basedOn` template style inheritance

@@ -5,6 +5,8 @@ export {
   type RichTextEditorProps,
   type StyledTextSegment,
 } from './RichTextEditor';
+export { RichTextNode, type RichTextNodeProps } from './RichTextNode';
+export { layoutRichText, type StyledRichRun } from '../utils/richTextLayout';
 
 // Dynamic Google Fonts & Web Font Loader (Typekit Web Font Loader replacement)
 export {

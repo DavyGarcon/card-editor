@@ -293,6 +293,7 @@ export default function App() {
       box: 'Nouveau Cadre',
       select: 'Liste Déroulante',
       image: 'Illustration',
+      richtext: 'Texte Riche',
     };
     const newField: TemplateField = {
       id: newId,
@@ -301,7 +302,7 @@ export default function App() {
       x: 45,
       y: 160,
       width: 260,
-      height: type === 'image' ? 140 : type === 'box' ? 90 : 38,
+      height: type === 'richtext' ? 120 : type === 'image' ? 140 : type === 'box' ? 90 : 38,
       fontSize: 16,
       color: type === 'box' ? '#475569' : '#ffffff',
       fill: '#0f172a',
@@ -844,6 +845,13 @@ const handleExportDeckPdf = async () => {
                           />
                         )}
 
+                        {field.type === 'richtext' && (
+                          <RichTextEditor
+                            value={currentVal}
+                            onChange={(html) => updateCardValue(field.id, html)}
+                          />
+                        )}
+
                         {field.type === 'select' && (
                           <select
                             value={currentVal}
@@ -975,8 +983,8 @@ const handleExportDeckPdf = async () => {
                   <button onClick={() => addTemplateField('box')} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
                     <Square size={14} /> + Cadre
                   </button>
-                  <button onClick={() => addTemplateField('text' as FieldType)} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
-                    <Type size={14} /> + Richtext
+                  <button onClick={() => addTemplateField('richtext')} style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}>
+                    <PenTool size={14} /> + Richtext
                   </button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto', marginTop: '8px' }}>
@@ -994,7 +1002,9 @@ const handleExportDeckPdf = async () => {
                             ? List
                             : field.type === 'box'
                               ? Square
-                              : Type;
+                              : field.type === 'richtext'
+                                ? PenTool
+                                : Type;
                       const isSelected = selectedFieldId === field.id;
 
                       return (
@@ -1153,6 +1163,16 @@ const handleExportDeckPdf = async () => {
                     </div>
                   )}
 
+                  {selectedField.type === 'richtext' && selectedField.editableInCard === false && (
+                    <div>
+                      <label style={labelStyle}>Contenu riche (Template)</label>
+                      <RichTextEditor
+                        value={selectedField.defaultValue || ''}
+                        onChange={(html) => updateFieldProps(selectedField.id, { defaultValue: html })}
+                      />
+                    </div>
+                  )}
+
                   {/* Select Options Configuration */}
                   {selectedField.type === 'select' && (
                     <div style={{ background: '#1e293b', padding: '10px', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1267,7 +1287,9 @@ const handleExportDeckPdf = async () => {
                   )}
 
                   {/* Text & Select Typography */}
-                  {(selectedField.type === 'text' || selectedField.type === 'select') && (
+                  {(selectedField.type === 'text' ||
+                    selectedField.type === 'select' ||
+                    selectedField.type === 'richtext') && (
                     <>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>

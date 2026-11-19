@@ -3,6 +3,7 @@ import { Rect, Text, Image as KonvaImage, Group, Transformer } from 'react-konva
 import Konva from 'konva';
 import { ResolvedCardStyle, TemplateField } from '../types/template';
 import { evaluateFieldScript } from '../utils/scriptEvaluator';
+import { RichTextNode } from './RichTextNode';
 
 interface DraggableNodeProps {
   field: TemplateField;
@@ -80,6 +81,27 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
 
   if (!isVisible && !isDesignMode) {
     return null;
+  }
+
+  if (field.type === 'richtext') {
+    return (
+      <RichTextNode
+        html={displayText}
+        label={field.label}
+        x={effectiveX}
+        y={effectiveY}
+        width={effectiveWidth}
+        height={effectiveHeight}
+        fontSize={effectiveFontSize}
+        color={effectiveColor}
+        align={field.align || 'left'}
+        opacity={effectiveOpacity}
+        isDesignMode={isDesignMode}
+        isSelected={isSelected}
+        onSelect={onSelect}
+        onChange={onChange}
+      />
+    );
   }
 
   const handleTransformEnd = () => {
