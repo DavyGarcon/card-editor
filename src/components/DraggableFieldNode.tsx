@@ -14,6 +14,7 @@ interface DraggableNodeProps {
   isSelected: boolean;
   onSelect: () => void;
   onChange: (updated: Partial<TemplateField>) => void;
+  onScriptError?: (fieldId: string, error: string | null) => void;
 }
 
 export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
@@ -25,6 +26,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
   isSelected,
   onSelect,
   onChange,
+  onScriptError,
 }) => {
   const shapeRef = useRef<any>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -52,10 +54,20 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
   const effectiveOpacity =
     (computed.opacity ?? field.opacity ?? 1) * (!isVisible && isDesignMode ? 0.3 : 1);
 
-  // Resolve display text for text & select fields
-  let displayText = rawValue || field.defaultValue || '';
+  // Script-controlled geometry cannot be dragged/resized — the computed value
+  // would immediately overwrite the edit on the next render.
+  const scriptControlsPosition = computed.x !== undefined || computed.y !== undefined;
+  const scriptControlsSize = computed.width !== undefined || computed.height !== undefined;
+
+  useEffect(() => {
+    onScriptError?.(field.id, computed.error ?? null);
+  }, [field.id, computed.error, onScriptError]);
+
+  // Resolve display text for text & select fields. rawValue already contains
+  // the fallback default, so an intentionally empty value stays empty.
+  let displayText = rawValue;
   if (field.type === 'select' && field.options && field.options.length > 0) {
-    const matched = field.options.find((opt) => opt.value === (rawValue || field.defaultValue));
+    const matched = field.options.find((opt) => opt.value === rawValue);
     displayText = matched ? matched.label : displayText;
   }
   if (computed.text !== undefined) {
@@ -69,16 +81,26 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
     if (field.type !== 'image' || !imageSrc) return;
     let cancelled = false;
     const img = new window.Image();
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setLoadedImage(null);
+    }, 8000);
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      if (!cancelled) setLoadedImage({ src: imageSrc, image: img });
+      if (cancelled) return;
+      window.clearTimeout(timeout);
+      setLoadedImage({ src: imageSrc, image: img });
     };
     img.onerror = () => {
-      if (!cancelled) setLoadedImage(null);
+      if (cancelled) return;
+      window.clearTimeout(timeout);
+      setLoadedImage(null);
     };
     img.src = imageSrc;
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      img.onload = null;
+      img.onerror = null;
     };
   }, [field.type, imageSrc]);
 
@@ -114,6 +136,8 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
         isSelected={isSelected}
         onSelect={onSelect}
         onChange={onChange}
+        canDrag={!scriptControlsPosition}
+        canResize={!scriptControlsSize}
       />
     );
   }
@@ -129,10 +153,10 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
     node.scaleY(1);
 
     onChange({
-      x: Math.round(node.x()),
-      y: Math.round(node.y()),
-      width: Math.max(20, Math.round(node.width() * scaleX)),
-      height: Math.max(20, Math.round(node.height() * scaleY)),
+      x: scriptControlsPosition ? field.x : Math.round(node.x()),
+      y: scriptControlsPosition ? field.y : Math.round(node.y()),
+      width: scriptControlsSize ? field.width : Math.max(20, Math.round(node.width() * scaleX)),
+      height: scriptControlsSize ? field.height : Math.max(20, Math.round(node.height() * scaleY)),
     });
   };
 
@@ -151,7 +175,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           strokeWidth={2}
           cornerRadius={6}
           opacity={effectiveOpacity}
-          draggable={isDesignMode}
+          draggable={isDesignMode && !scriptControlsPosition}
           onClick={onSelect}
           onTap={onSelect}
           onDragEnd={(e) => onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })}
@@ -174,7 +198,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           fill={effectiveColor}
           align={field.align || 'left'}
           opacity={effectiveOpacity}
-          draggable={isDesignMode}
+          draggable={isDesignMode && !scriptControlsPosition}
           onClick={onSelect}
           onTap={onSelect}
           onDragEnd={(e) => onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })}
@@ -191,7 +215,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           width={effectiveWidth}
           height={effectiveHeight}
           opacity={effectiveOpacity}
-          draggable={isDesignMode}
+          draggable={isDesignMode && !scriptControlsPosition}
           onClick={onSelect}
           onTap={onSelect}
           onDragEnd={(e) => onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })}
@@ -226,8 +250,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
 
       {isSelected && isDesignMode && (
         <Transformer
-          name="template-field"
+          name="template-transformer"
           ref={trRef}
+          enabledAnchors={scriptControlsSize ? [] : undefined}
           rotateEnabled={false}
           boundBoxFunc={(oldBox, newBox) =>
             newBox.width < 20 || newBox.height < 20 ? oldBox : newBox

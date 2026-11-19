@@ -14,6 +14,8 @@ export interface TemplateField {
   width: number;
   height: number;
   z?: number;
+  /** Local override that changes only the stacking order of an inherited field. */
+  zOnly?: boolean;
   /** For "richtext" fields this holds an HTML string (bold/italic/underline/lists). */
   defaultValue?: string;
   // Text & Select styling

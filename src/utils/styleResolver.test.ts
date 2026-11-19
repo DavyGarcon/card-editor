@@ -65,4 +65,33 @@ describe('resolveCardStyle', () => {
     const b: CardStyleDefinition = { key: 'b', name: 'B', basedOn: 'a', fields: [] };
     expect(() => resolveCardStyle('a', [a, b])).toThrow(/Boucle d'héritage/);
   });
+
+  it('throws for a missing style instead of silently using another one', () => {
+    expect(() => resolveCardStyle('missing', [base])).toThrow(/absent du template/);
+  });
+
+  it('z-only overrides change stacking without resetting inherited properties', () => {
+    const child: CardStyleDefinition = {
+      key: 'child',
+      name: 'Child',
+      basedOn: 'base',
+      fields: [
+        {
+          id: 'title',
+          label: 'Titre',
+          type: 'text',
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          z: 9,
+          zOnly: true,
+        },
+      ],
+    };
+    const title = resolveCardStyle('child', [base, child]).fields.find((f) => f.id === 'title')!;
+    expect(title.z).toBe(9);
+    expect(title.fontSize).toBe(20);
+    expect(title.x).toBe(10);
+  });
 });

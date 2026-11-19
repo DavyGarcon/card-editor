@@ -16,7 +16,7 @@ describe('layoutRichText', () => {
   });
 
   it('wraps words and applies line height', () => {
-    const runs = layoutRichText([segment('aaa bbb ccc')], { width: 20, fontSize: 16 });
+    const runs = layoutRichText([segment('aaa bbb ccc')], { width: 40, fontSize: 16 });
     expect(runs.map((run) => run.y)).toEqual([0, 20, 40]);
   });
 

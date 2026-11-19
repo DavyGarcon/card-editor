@@ -23,6 +23,9 @@ interface LayoutOptions {
 
 const DEFAULT_FONT_FAMILY = 'Arial';
 const LINE_HEIGHT_FACTOR = 1.25;
+// Imported cards can contain very large values: never create an unbounded
+// number of Konva.Text nodes from a single field.
+const MAX_LAYOUT_RUNS = 2000;
 
 let measureContext: CanvasRenderingContext2D | null = null;
 
@@ -89,8 +92,48 @@ export function layoutRichText(
   segments: StyledTextSegment[],
   { width, fontSize, align = 'left', fontFamily = DEFAULT_FONT_FAMILY }: LayoutOptions,
 ): StyledRichRun[] {
-  const tokens = tokenize(segments, fontSize, fontFamily);
-  if (tokens.length === 0) return [];
+  const sourceTokens = tokenize(segments, fontSize, fontFamily);
+  if (sourceTokens.length === 0) return [];
+
+  // A single unbreakable word longer than the field would otherwise be drawn
+  // outside the card. Split it into measured chunks that fit the field width.
+  const tokens: Token[] = [];
+  for (const token of sourceTokens) {
+    if (tokens.length >= MAX_LAYOUT_RUNS) break;
+    if (token.kind !== 'word' || token.measuredWidth <= width) {
+      tokens.push(token);
+      continue;
+    }
+    let start = 0;
+    while (start < token.text.length) {
+      if (tokens.length >= MAX_LAYOUT_RUNS) {
+        tokens.push({ ...token, text: token.text.slice(start), measuredWidth: width });
+        break;
+      }
+      // Binary search keeps the number of canvas measurements logarithmic
+      // even for a single extremely long unbroken word.
+      let low = start + 1;
+      let high = token.text.length;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (
+          measure(token.text.slice(start, mid), token.bold, token.italic, fontSize, fontFamily) <=
+          width
+        ) {
+          low = mid;
+        } else {
+          high = mid - 1;
+        }
+      }
+      const chunk = token.text.slice(start, low);
+      tokens.push({
+        ...token,
+        text: chunk,
+        measuredWidth: measure(chunk, token.bold, token.italic, fontSize, fontFamily),
+      });
+      start = low;
+    }
+  }
 
   const lines: Token[][] = [[]];
   let lineWidth = 0;
@@ -118,6 +161,10 @@ export function layoutRichText(
     lines[lines.length - 1].push(token);
     lineWidth += token.measuredWidth;
   }
+
+  // Trailing spaces must not affect the alignment of the final line either.
+  const lastLine = lines[lines.length - 1];
+  while (lastLine.length > 0 && lastLine[lastLine.length - 1].kind === 'space') lastLine.pop();
 
   const lineHeight = fontSize * LINE_HEIGHT_FACTOR;
   const runs: StyledRichRun[] = [];

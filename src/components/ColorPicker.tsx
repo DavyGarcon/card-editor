@@ -36,6 +36,16 @@ export const DEFAULT_CARD_SWATCHES: string[] = [
 
 const HEX_REGEX = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 
+/** Native <input type="color"> only accepts 6-digit hex, so normalize everything else. */
+function toNativeHex(value: string): string {
+  const short = /^#([0-9A-Fa-f]{3})$/.exec(value);
+  if (short) {
+    const [, r, g, b] = /^#([0-9A-Fa-f])([0-9A-Fa-f])([0-9A-Fa-f])$/.exec(value)!;
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return /^#[0-9A-Fa-f]{6}$/.test(value) ? value.toLowerCase() : '#1e293b';
+}
+
 export const ColorPicker: React.FC<ColorPickerProps> = ({
   label,
   value,
@@ -46,23 +56,29 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
   // `draft` is only set while the user types; the prop stays the source of truth.
   const [draft, setDraft] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const inputId = React.useId();
 
   const handleTextChange = (raw: string) => {
     setDraft(raw);
     const normalized = raw.startsWith('#') ? raw : `#${raw}`;
     if (HEX_REGEX.test(normalized)) {
-      onChange(normalized.toLowerCase());
+      const hex = normalized.toLowerCase();
+      onChange(hex.length === 4 ? toNativeHex(hex) : hex);
     } else if (allowTransparent && raw.trim().toLowerCase() === 'transparent') {
       onChange('transparent');
     }
   };
 
-  // Native <input type="color"> requires a strict 6-digit hex string (#rrggbb)
-  const safeNativeHex = /^#[0-9A-Fa-f]{6}$/.test(value) ? value : '#1e293b';
+  const safeNativeHex = toNativeHex(value);
 
   return (
     <div style={styles.wrapper}>
-      {label && <label style={styles.label}>{label}</label>}
+      {label && (
+        <label htmlFor={inputId} style={styles.label}>
+          {label}
+        </label>
+      )}
 
       <div style={styles.controlRow}>
         {/* Native Spectrum Color Wheel */}
@@ -80,19 +96,27 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
 
         {/* Hex Text Input */}
         <input
+          id={inputId}
           type="text"
           value={draft ?? value ?? '#ffffff'}
           onChange={(e) => handleTextChange(e.target.value)}
-          onBlur={() => setDraft(null)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => {
+            setIsFocused(false);
+            setDraft(null);
+          }}
+          aria-label={label || 'Couleur hexadécimale'}
           placeholder="#f59e0b"
           maxLength={11}
-          style={styles.hexInput}
+          style={{ ...styles.hexInput, ...(isFocused ? styles.hexInputFocused : {}) }}
         />
 
         {/* Toggle Swatch Popover */}
         <button
           type="button"
-          title="Toggle preset palette"
+          title="Afficher la palette de couleurs"
+          aria-label="Afficher la palette de couleurs"
+          aria-expanded={isOpen}
           onClick={() => setIsOpen((prev) => !prev)}
           style={styles.paletteToggle}
         >
@@ -187,6 +211,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     fontFamily: 'monospace',
     outline: 'none',
+  },
+  hexInputFocused: {
+    outline: '2px solid #f59e0b',
+    outlineOffset: '2px',
+    borderRadius: '3px',
   },
   paletteToggle: {
     backgroundColor: '#1e293b',

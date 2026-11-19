@@ -59,11 +59,27 @@ describe('deckIO', () => {
     saveDeckSession(session);
     expect(localStorage.getItem(DECK_STORAGE_KEY)).toBeTruthy();
     expect(localStorage.getItem(TEMPLATE_STORAGE_KEY)).toBeNull();
-    expect(loadDeckSession(session, styles).cards).toEqual(session.cards);
+    expect(loadDeckSession(session, styles).session.cards).toEqual(session.cards);
 
     localStorage.setItem(DECK_STORAGE_KEY, '{');
-    expect(loadDeckSession(session, styles).cards).toEqual(session.cards);
+    const failed = loadDeckSession(session, styles);
+    expect(failed.session.cards).toEqual(session.cards);
+    expect(failed.error).toMatch(/illisible/);
+    // The rejected payload must survive so the user can download it.
+    expect(localStorage.getItem('modern-geckos-deck-recovery-v1')).toBe('{');
     clearDeckSession();
     expect(localStorage.getItem(DECK_STORAGE_KEY)).toBeNull();
+  });
+
+  it('reports autosave failures instead of swallowing them', () => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    try {
+      expect(saveDeckSession(session)).toBe(false);
+    } finally {
+      Storage.prototype.setItem = original;
+    }
   });
 });

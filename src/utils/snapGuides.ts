@@ -29,7 +29,13 @@ export function getLineGuideStops(
 
   // 2. Repères de tous les autres calques présents sur la carte
   stage.find('.template-field').forEach((guideItem) => {
-    if (guideItem === skipShape) {
+    // A Transformer tracks the dragged node; including it makes the node snap
+    // to itself and produces flickering guides.
+    if (
+      guideItem === skipShape ||
+      guideItem.getClassName() === 'Transformer' ||
+      guideItem.getParent()?.getClassName() === 'Transformer'
+    ) {
       return;
     }
     const box = guideItem.getClientRect({ relativeTo: stage });

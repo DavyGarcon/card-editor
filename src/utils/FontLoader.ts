@@ -41,14 +41,17 @@ function buildGoogleFontUrl(family: string, weights: string[] = ['400', '700']):
 /**
  * Dynamically loads a Google Font and resolves once the browser font face is ready for Canvas/Konva.
  */
-export async function loadGoogleFont(
-  family: string,
-  weights: string[] = ['400', '700'],
-): Promise<void> {
+export function fontDefinitionFor(family: string): FontDefinition | undefined {
+  return DEFAULT_GAMING_FONTS.find((font) => font.family === family.trim());
+}
+
+export async function loadGoogleFont(family: string, weights?: string[]): Promise<void> {
   const cleanFamily = family.trim();
   if (!cleanFamily) return;
 
-  const cacheKey = `${cleanFamily}:${weights.join(',')}`;
+  // Single-weight families (e.g. MedievalSharp) fail when CSS2 asks for 400;700.
+  const resolvedWeights = weights ?? fontDefinitionFor(cleanFamily)?.weights ?? ['400', '700'];
+  const cacheKey = `${cleanFamily}:${[...resolvedWeights].sort().join(',')}`;
   if (loadedFamilies.has(cacheKey)) return;
 
   const existingPromise = pendingLoads.get(cacheKey);
@@ -56,14 +59,15 @@ export async function loadGoogleFont(
 
   const loadPromise = (async () => {
     try {
-      const linkId = `google-font-${cleanFamily.toLowerCase().replace(/\s+/g, '-')}`;
+      const weightKey = [...resolvedWeights].sort().join('-');
+      const linkId = `google-font-${cleanFamily.toLowerCase().replace(/\s+/g, '-')}-${weightKey}`;
       let linkEl = document.getElementById(linkId) as HTMLLinkElement | null;
 
       if (!linkEl) {
         linkEl = document.createElement('link');
         linkEl.id = linkId;
         linkEl.rel = 'stylesheet';
-        linkEl.href = buildGoogleFontUrl(cleanFamily, weights);
+        linkEl.href = buildGoogleFontUrl(cleanFamily, resolvedWeights);
         document.head.appendChild(linkEl);
 
         await new Promise<void>((resolve, reject) => {
@@ -76,7 +80,7 @@ export async function loadGoogleFont(
       // Explicitly trigger FontFaceSet loading so Konva canvas draws with the real font immediately
       if ('fonts' in document) {
         await Promise.all(
-          weights.map((weight) => document.fonts.load(`${weight} 16px "${cleanFamily}"`)),
+          resolvedWeights.map((weight) => document.fonts.load(`${weight} 16px "${cleanFamily}"`)),
         );
         await document.fonts.ready;
       }
@@ -106,6 +110,8 @@ export async function loadTemplateFonts(fonts: Array<string | FontDefinition>): 
 /**
  * Checks whether a font family has already been loaded via FontLoader.
  */
-export function isFontLoaded(family: string, weights: string[] = ['400', '700']): boolean {
-  return loadedFamilies.has(`${family.trim()}:${weights.join(',')}`);
+export function isFontLoaded(family: string, weights?: string[]): boolean {
+  const cleanFamily = family.trim();
+  const resolved = weights ?? fontDefinitionFor(cleanFamily)?.weights ?? ['400', '700'];
+  return loadedFamilies.has(`${cleanFamily}:${[...resolved].sort().join(',')}`);
 }

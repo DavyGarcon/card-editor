@@ -46,17 +46,26 @@ import {
   loadTemplateFile,
   loadTemplateSession,
   saveTemplateFile,
-  saveTemplateSession,
+  type TemplateSession,
 } from './io/templateIO';
 import {
   clearDeckSession,
   loadDeckFile,
   loadDeckSession,
   saveDeckFile,
-  saveDeckSession,
+  type DeckSession,
 } from './io/deckIO';
+import { clearRecovery, downloadRecovery, type SessionKind } from './io/recovery';
 import { useUndoableDocument } from './hooks/useUndoableDocument';
+import { useAutosave } from './hooks/useAutosave';
 import { INITIAL_CARDS, INITIAL_PACK } from './data/starterPack';
+
+/** Numeric inputs can transiently be empty or non-finite; keep documents valid. */
+function clampNumber(raw: string, fallback: number, min: number, max: number): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
 
 export default function App() {
   const savedTemplate = useMemo(
@@ -76,31 +85,68 @@ export default function App() {
       ),
     [],
   );
-  const { pack, setPack, cards, setCards, setDocument, undo, redo, canUndo, canRedo } =
-    useUndoableDocument({
-      pack: savedTemplate.pack,
-      cards: savedDeck.cards,
-    });
-  const [activeStyleKey, setActiveStyleKey] = useState<string>(
-    savedTemplate.activeStyleKey || INITIAL_PACK.activeStyleKey || 'spell_fire',
+  const initialError = savedTemplate.error ?? savedDeck.error ?? null;
+  const {
+    pack,
+    setPack,
+    cards,
+    setCards,
+    activeStyleKey,
+    activeCardId,
+    selectedFieldId,
+    mode,
+    snapshot,
+    setUi,
+    setDocument,
+    resetDocument,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useUndoableDocument({
+    pack: savedTemplate.session.pack,
+    cards: savedDeck.session.cards,
+    activeStyleKey: savedTemplate.session.activeStyleKey,
+    activeCardId: savedDeck.session.activeCardId,
+    selectedFieldId: 'title',
+    mode: savedTemplate.session.mode,
+  });
+  const [errorBanner, setErrorBanner] = useState<string | null>(initialError);
+  const [recoveryKind, setRecoveryKind] = useState<SessionKind | null>(
+    savedTemplate.error ? 'template' : savedDeck.error ? 'deck' : null,
   );
-  const [mode, setMode] = useState<'card' | 'template'>(savedTemplate.mode || 'card');
-  const [selectedFieldId, setSelectedFieldId] = useState<string | null>('title');
-  const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [dismissedStyleError, setDismissedStyleError] = useState<string | null>(null);
   const [draggedComponentId, setDraggedComponentId] = useState<string | null>(null);
-  const [activeCardId, setActiveCardId] = useState<string>(savedDeck.activeCardId || '1');
+  const [scriptErrors, setScriptErrors] = useState<Record<string, string>>({});
+  const [boundaryKey, setBoundaryKey] = useState(0);
+  const [guides, setGuides] = useState<GuideLineRender[]>([]);
   const [cropRequest, setCropRequest] = useState<{
     src: string;
     aspectRatio: number;
-    onCropped: (dataUrl: string) => void;
+    target: { kind: 'card' | 'field'; id: string; fieldId?: string };
   } | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
 
   const activeCard = cards.find((c) => c.id === activeCardId) || cards[0];
-  const currentStyleKey = mode === 'card' && activeCard ? activeCard.styleKey : activeStyleKey;
+  // One style selection for both modes: choosing a card selects its style, and
+  // editing a style in Template mode keeps it selected when switching back.
+  const currentStyleKey = activeStyleKey;
 
   const styleResolution = useMemo(() => {
+    if (pack.styles.length === 0) {
+      return {
+        style: {
+          key: 'default',
+          name: 'Défaut',
+          width: 375,
+          height: 525,
+          backgroundColor: '#1e293b',
+          borderColor: '#f59e0b',
+          fields: [],
+        },
+        error: 'Le template ne contient aucun style.',
+      };
+    }
     try {
       return {
         style: resolveCardStyle(currentStyleKey, pack.styles),
@@ -108,10 +154,7 @@ export default function App() {
       };
     } catch (err) {
       return {
-        style: resolveCardStyle(
-          pack.styles[0]?.key || 'base_spell',
-          pack.styles.filter((s) => !s.basedOn),
-        ),
+        style: resolveCardStyle(pack.styles[0].key, pack.styles),
         error: err instanceof Error ? err.message : 'Erreur de résolution du style',
       };
     }
@@ -130,26 +173,27 @@ export default function App() {
   const bannerMessage =
     errorBanner ?? (dismissedStyleError === styleResolution.error ? null : styleResolution.error);
 
-  // Independent autosave slots: a broken template file cannot discard the deck.
-  useEffect(() => {
-    const timer = window.setTimeout(() => saveTemplateSession({ pack, activeStyleKey, mode }), 400);
-    return () => window.clearTimeout(timer);
-  }, [pack, activeStyleKey, mode]);
+  const templateSession = useMemo<TemplateSession>(
+    () => ({ pack, activeStyleKey: currentStyleKey, mode }),
+    [pack, currentStyleKey, mode],
+  );
+  const deckSession = useMemo<DeckSession>(
+    () => ({
+      cards,
+      activeCardId,
+      name: pack.name,
+      templateName: pack.name,
+      styleKeys: pack.styles.map((style) => style.key),
+    }),
+    [cards, activeCardId, pack],
+  );
+  // Two independent slots; failures are reported instead of silently ignored.
+  const { status: saveStatus, saveNow: flushSave } = useAutosave(templateSession, deckSession);
 
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () =>
-        saveDeckSession({
-          cards,
-          activeCardId,
-          name: pack.name,
-          templateName: pack.name,
-          styleKeys: pack.styles.map((style) => style.key),
-        }),
-      400,
-    );
-    return () => window.clearTimeout(timer);
-  }, [cards, activeCardId, pack]);
+  const showError = useCallback((message: string | null, kind?: SessionKind) => {
+    setErrorBanner(message);
+    setRecoveryKind(kind ?? null);
+  }, []);
 
   const templateFontNames = useMemo(
     () =>
@@ -182,6 +226,19 @@ export default function App() {
     !rawActiveStyle.fields.some((f) => f.id === selectedField.id),
   );
 
+  const handleScriptError = useCallback((fieldId: string, error: string | null) => {
+    setScriptErrors((prev) => {
+      if (error) {
+        if (prev[fieldId] === error) return prev;
+        return { ...prev, [fieldId]: error };
+      }
+      if (!(fieldId in prev)) return prev;
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+  }, []);
+
   const selectedFieldScriptError = useMemo(() => {
     if (!selectedField?.script) return null;
     const res = evaluateFieldScript(selectedField.script, {
@@ -191,6 +248,9 @@ export default function App() {
     });
     return res.error || null;
   }, [selectedField, activeCard, resolvedStyle]);
+  const visibleScriptError = selectedField
+    ? (scriptErrors[selectedField.id] ?? selectedFieldScriptError)
+    : null;
 
   // --- Style & Inheritance Management ---
   const createStyleVariant = (inheritFromCurrent: boolean) => {
@@ -225,43 +285,57 @@ export default function App() {
           ],
         };
 
-    setPack((prev) => ({ ...prev, styles: [...prev.styles, newStyle] }));
-    setActiveStyleKey(newKey);
-    if (activeCard) {
-      setCards((prev) =>
-        prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: newKey } : c)),
-      );
-    }
+    // One history step: adding a style, selecting it and re-keying the card
+    // belong together — undo should never leave a dangling selection.
+    setDocument({
+      ...snapshot(),
+      pack: { ...pack, styles: [...pack.styles, newStyle] },
+      activeStyleKey: newKey,
+      cards: activeCard
+        ? cards.map((c) => (c.id === activeCard.id ? { ...c, styleKey: newKey } : c))
+        : cards,
+    });
   };
 
   const updateActiveStyleMeta = (updates: Partial<CardStyleDefinition>) => {
-    setPack((prev) => ({
-      ...prev,
-      styles: prev.styles.map((s) => (s.key === currentStyleKey ? { ...s, ...updates } : s)),
-    }));
+    setPack(
+      (prev) => ({
+        ...prev,
+        styles: prev.styles.map((s) => (s.key === currentStyleKey ? { ...s, ...updates } : s)),
+      }),
+      `style-meta-${currentStyleKey}`,
+    );
   };
 
   const updateFieldProps = (fieldId: string, updates: Partial<TemplateField>) => {
-    setPack((prev) => ({
-      ...prev,
-      styles: prev.styles.map((s) => {
-        if (s.key !== currentStyleKey) return s;
-        const existsLocally = s.fields.some((f) => f.id === fieldId);
-        if (existsLocally) {
+    // A z-only override must stop being z-only as soon as any other property is
+    // edited, otherwise the resolver would keep ignoring the new value.
+    const hasNonZUpdate = Object.keys(updates).some((key) => key !== 'z' && key !== 'zOnly');
+    const effectiveUpdates =
+      hasNonZUpdate && updates.zOnly !== false ? { ...updates, zOnly: false } : updates;
+    setPack(
+      (prev) => ({
+        ...prev,
+        styles: prev.styles.map((s) => {
+          if (s.key !== currentStyleKey) return s;
+          const existsLocally = s.fields.some((f) => f.id === fieldId);
+          if (existsLocally) {
+            return {
+              ...s,
+              fields: s.fields.map((f) => (f.id === fieldId ? { ...f, ...effectiveUpdates } : f)),
+            };
+          }
+          // Override inherited field locally in child style
+          const baseField = resolvedStyle.fields.find((f) => f.id === fieldId);
+          if (!baseField) return s;
           return {
             ...s,
-            fields: s.fields.map((f) => (f.id === fieldId ? { ...f, ...updates } : f)),
+            fields: [...s.fields, { ...baseField, ...effectiveUpdates }],
           };
-        }
-        // Override inherited field locally in child style
-        const baseField = resolvedStyle.fields.find((f) => f.id === fieldId);
-        if (!baseField) return s;
-        return {
-          ...s,
-          fields: [...s.fields, { ...baseField, ...updates }],
-        };
+        }),
       }),
-    }));
+      `field-${fieldId}`,
+    );
   };
 
   const addTemplateField = (type: FieldType) => {
@@ -297,23 +371,31 @@ export default function App() {
         : {}),
     };
 
-    setPack((prev) => ({
-      ...prev,
-      styles: prev.styles.map((s) =>
-        s.key === currentStyleKey ? { ...s, fields: [...s.fields, newField] } : s,
-      ),
-    }));
-    setSelectedFieldId(newId);
+    setDocument({
+      ...snapshot(),
+      pack: {
+        ...pack,
+        styles: pack.styles.map((s) =>
+          s.key === currentStyleKey ? { ...s, fields: [...s.fields, newField] } : s,
+        ),
+      },
+      selectedFieldId: newId,
+    });
   };
 
   const deleteOrRevertField = (fieldId: string) => {
-    setPack((prev) => ({
-      ...prev,
-      styles: prev.styles.map((s) =>
-        s.key === currentStyleKey ? { ...s, fields: s.fields.filter((f) => f.id !== fieldId) } : s,
-      ),
-    }));
-    if (selectedFieldId === fieldId) setSelectedFieldId(null);
+    setDocument({
+      ...snapshot(),
+      pack: {
+        ...pack,
+        styles: pack.styles.map((s) =>
+          s.key === currentStyleKey
+            ? { ...s, fields: s.fields.filter((f) => f.id !== fieldId) }
+            : s,
+        ),
+      },
+      selectedFieldId: selectedFieldId === fieldId ? null : selectedFieldId,
+    });
   };
 
   const reorderComponentsByDrop = (targetFieldId: string) => {
@@ -350,7 +432,9 @@ export default function App() {
           } else {
             const baseField = resolvedStyle.fields.find((f) => f.id === id);
             if (baseField) {
-              fields = [...fields, { ...baseField, z }];
+              // Inherited field: keep the rest of the parent definition and
+              // override only the stacking order.
+              fields = [...fields, { ...baseField, z, zOnly: true }];
             }
           }
         }
@@ -389,44 +473,51 @@ export default function App() {
 
   // --- Card Values & Image Upload ---
   const updateCardValue = (fieldId: string, value: string) => {
-    setCards((prev) =>
-      prev.map((c) =>
-        c.id === activeCard.id ? { ...c, values: { ...c.values, [fieldId]: value } } : c,
-      ),
+    setCards(
+      (prev) =>
+        prev.map((c) =>
+          c.id === activeCard.id ? { ...c, values: { ...c.values, [fieldId]: value } } : c,
+        ),
+      `card-value-${activeCard.id}-${fieldId}`,
     );
   };
 
   const requestImageCrop = (
     file: File,
     aspectRatio: number,
-    onCropped: (dataUrl: string) => void,
+    target: { kind: 'card' | 'field'; id: string; fieldId?: string },
   ) => {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        setCropRequest({ src: reader.result, aspectRatio, onCropped });
+        setCropRequest({ src: reader.result, aspectRatio, target });
       }
     };
-    reader.onerror = () => setErrorBanner('Impossible de lire le fichier image.');
+    reader.onerror = () => showError('Impossible de lire le fichier image.');
     reader.readAsDataURL(file);
   };
 
   const handleCardImageUpload = (field: TemplateField, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    requestImageCrop(file, field.width / Math.max(1, field.height), (dataUrl) =>
-      updateCardValue(field.id, dataUrl),
-    );
+    if (!file || !activeCard) return;
+    requestImageCrop(file, field.width / Math.max(1, field.height), {
+      kind: 'card',
+      id: activeCard.id,
+      fieldId: field.id,
+    });
     e.target.value = '';
   };
 
   const addNewCard = () => {
-    const newId = Date.now().toString();
-    setCards([
-      ...cards,
-      { id: newId, styleKey: currentStyleKey, values: { title: 'Nouvelle Carte' } },
-    ]);
-    setActiveCardId(newId);
+    const newId = `card_${Date.now()}`;
+    setDocument({
+      ...snapshot(),
+      cards: [
+        ...cards,
+        { id: newId, styleKey: currentStyleKey, values: { title: 'Nouvelle Carte' } },
+      ],
+      activeCardId: newId,
+    });
   };
 
   // --- Export / Import ---
@@ -439,77 +530,123 @@ export default function App() {
       link.href = uri;
       link.click();
     } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export PNG.");
+      showError(err instanceof Error ? err.message : "Erreur lors de l'export PNG.");
     }
   };
 
   // Template pack and deck are saved to / loaded from independent files.
   const saveTemplate = useCallback(() => {
     try {
-      saveTemplateFile({ pack, activeStyleKey: currentStyleKey, mode });
-      setErrorBanner(null);
+      saveTemplateFile(templateSession);
+      showError(null);
     } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export du template.");
+      showError(err instanceof Error ? err.message : "Erreur lors de l'export du template.");
     }
-  }, [pack, currentStyleKey, mode]);
+  }, [templateSession, showError]);
 
   const loadTemplate = useCallback(
     async (file: File) => {
       try {
         const session = await loadTemplateFile(file);
-        setPack(session.pack);
-        setActiveStyleKey(session.activeStyleKey);
-        setMode(session.mode);
-        setErrorBanner(null);
+        const availableKeys = new Set(session.pack.styles.map((s) => s.key));
+        const fallbackKey =
+          session.activeStyleKey && availableKeys.has(session.activeStyleKey)
+            ? session.activeStyleKey
+            : (session.pack.styles[0]?.key ?? '');
+        const incompatibleCount = cards.filter((c) => !availableKeys.has(c.styleKey)).length;
+        const remappedCards = cards.map((c) =>
+          availableKeys.has(c.styleKey) ? c : { ...c, styleKey: fallbackKey },
+        );
+        const allFieldIds = new Set(session.pack.styles.flatMap((s) => s.fields.map((f) => f.id)));
+        setDocument({
+          pack: session.pack,
+          cards: remappedCards,
+          activeStyleKey: fallbackKey,
+          activeCardId: remappedCards.some((c) => c.id === activeCardId)
+            ? activeCardId
+            : (remappedCards[0]?.id ?? ''),
+          selectedFieldId:
+            selectedFieldId && allFieldIds.has(selectedFieldId) ? selectedFieldId : null,
+          mode: session.mode,
+        });
+        showError(
+          incompatibleCount > 0
+            ? `${incompatibleCount} carte(s) ont été réassignée(s) au style « ${fallbackKey} » (style absent du nouveau template).`
+            : null,
+        );
       } catch (err) {
-        setErrorBanner(err instanceof Error ? err.message : 'Fichier template invalide.');
+        showError(err instanceof Error ? err.message : 'Fichier template invalide.');
       }
     },
-    [setPack],
+    [cards, activeCardId, selectedFieldId, setDocument, showError],
   );
 
   const saveDeck = useCallback(() => {
     try {
-      saveDeckFile({
-        cards,
-        activeCardId,
-        name: pack.name,
-        templateName: pack.name,
-        styleKeys: pack.styles.map((style) => style.key),
-      });
-      setErrorBanner(null);
+      saveDeckFile(deckSession);
+      showError(null);
     } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export du deck.");
+      showError(err instanceof Error ? err.message : "Erreur lors de l'export du deck.");
     }
-  }, [cards, activeCardId, pack]);
+  }, [deckSession, showError]);
 
   const loadDeck = useCallback(
     async (file: File) => {
       try {
         const session = await loadDeckFile(file, pack.styles);
-        setCards(session.cards);
-        setActiveCardId(session.activeCardId || session.cards[0]?.id || '1');
-        setErrorBanner(null);
+        const availableKeys = new Set(pack.styles.map((s) => s.key));
+        const fallbackKey = currentStyleKey;
+        const incompatibleCount = session.cards.filter(
+          (c) => !availableKeys.has(c.styleKey),
+        ).length;
+        const remappedCards = session.cards.map((c) =>
+          availableKeys.has(c.styleKey) ? c : { ...c, styleKey: fallbackKey },
+        );
+        const nextCardId =
+          session.activeCardId && remappedCards.some((c) => c.id === session.activeCardId)
+            ? session.activeCardId!
+            : (remappedCards[0]?.id ?? '');
+        setDocument({
+          ...snapshot(),
+          cards: remappedCards,
+          activeCardId: nextCardId,
+          activeStyleKey: remappedCards.find((c) => c.id === nextCardId)?.styleKey ?? fallbackKey,
+        });
+        showError(
+          incompatibleCount > 0
+            ? `${incompatibleCount} carte(s) utilisaient un style inconnu et ont été réassignée(s) à « ${fallbackKey} ».`
+            : null,
+        );
       } catch (err) {
-        setErrorBanner(err instanceof Error ? err.message : 'Fichier deck invalide.');
+        showError(err instanceof Error ? err.message : 'Fichier deck invalide.');
       }
     },
-    [pack.styles, setCards],
+    [pack.styles, currentStyleKey, snapshot, setDocument, showError],
   );
 
   const resetProject = () => {
     clearTemplateSession();
     clearDeckSession();
-    setDocument({ pack: INITIAL_PACK, cards: INITIAL_CARDS });
-    setActiveStyleKey(INITIAL_PACK.activeStyleKey || 'spell_fire');
-    setActiveCardId('1');
-    setMode('card');
-    setSelectedFieldId('title');
-    setErrorBanner(null);
+    clearRecovery('template');
+    clearRecovery('deck');
+    // Hard reset also empties the undo timeline: old sessions must not be
+    // resurrected by Ctrl+Z after an explicit "Réinitialiser".
+    resetDocument({
+      pack: INITIAL_PACK,
+      cards: INITIAL_CARDS,
+      activeStyleKey: INITIAL_PACK.activeStyleKey || 'spell_fire',
+      activeCardId: INITIAL_CARDS[0]?.id ?? '',
+      selectedFieldId: 'title',
+      mode: 'card',
+    });
+    setDismissedStyleError(null);
+    setScriptErrors({});
+    setGuides([]);
+    setCropRequest(null);
+    setDraggedComponentId(null);
+    setBoundaryKey((key) => key + 1);
+    showError(null);
   };
-
-  // Dans le composant App :
-  const [guides, setGuides] = useState<GuideLineRender[]>([]);
 
   const handleLayerDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     if (mode !== 'template') return;
@@ -564,23 +701,24 @@ export default function App() {
     try {
       setIsExportingPdf(true);
       const capturedImages: string[] = [];
-      let ratio = { width: resolvedStyle.width, height: resolvedStyle.height };
+      // Mixed-style decks can have different ratios: keep each card's own
+      // dimensions so the PDF never stretches artwork.
+      const ratios: Array<{ width: number; height: number }> = [];
 
       for (const cardItem of cards) {
         const cardStyle = resolveCardStyle(cardItem.styleKey, pack.styles);
-        if (capturedImages.length === 0)
-          ratio = { width: cardStyle.width, height: cardStyle.height };
+        ratios.push({ width: cardStyle.width, height: cardStyle.height });
         capturedImages.push(await renderCardToDataUrl(cardItem, cardStyle, 3));
       }
 
-      await exportDeckToPdf(capturedImages, ratio, {
+      await exportDeckToPdf(capturedImages, ratios, {
         cardWidthMm: 63.5,
         gapMm: 2,
         drawCropMarks: true,
         filename: `${pack.name.toLowerCase().replace(/\s+/g, '-')}-planche-a4.pdf`,
       });
     } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : "Erreur lors de l'export PDF.");
+      showError(err instanceof Error ? err.message : "Erreur lors de l'export PDF.");
     } finally {
       setIsExportingPdf(false);
     }
@@ -588,6 +726,14 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Let the browser handle its own editing shortcuts while typing.
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+      ) {
+        return;
+      }
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === 'z') {
@@ -656,7 +802,7 @@ export default function App() {
           }}
         >
           <button
-            onClick={() => setMode('card')}
+            onClick={() => setUi({ mode: 'card' })}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -674,10 +820,7 @@ export default function App() {
             <PenTool size={14} /> Cartes
           </button>
           <button
-            onClick={() => {
-              setActiveStyleKey(currentStyleKey);
-              setMode('template');
-            }}
+            onClick={() => setUi({ mode: 'template' })}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -722,12 +865,16 @@ export default function App() {
             value={currentStyleKey}
             onChange={(e) => {
               const nextKey = e.target.value;
-              setActiveStyleKey(nextKey);
-              if (mode === 'card' && activeCard) {
-                setCards((prev) =>
-                  prev.map((c) => (c.id === activeCard.id ? { ...c, styleKey: nextKey } : c)),
-                );
-              }
+              setDocument({
+                ...snapshot(),
+                activeStyleKey: nextKey,
+                // Switching the active style in Card mode also re-keys the
+                // current card, in the same undo step.
+                cards:
+                  mode === 'card' && activeCard
+                    ? cards.map((c) => (c.id === activeCard.id ? { ...c, styleKey: nextKey } : c))
+                    : cards,
+              });
             }}
             style={inputStyle}
           >
@@ -787,10 +934,7 @@ export default function App() {
               {cards.map((c) => (
                 <div
                   key={c.id}
-                  onClick={() => {
-                    setActiveCardId(c.id);
-                    setActiveStyleKey(c.styleKey);
-                  }}
+                  onClick={() => setUi({ activeCardId: c.id, activeStyleKey: c.styleKey })}
                   style={{
                     padding: '10px',
                     borderRadius: '6px',
@@ -812,7 +956,18 @@ export default function App() {
                       size={16}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setCards(cards.filter((item) => item.id !== c.id));
+                        const remaining = cards.filter((item) => item.id !== c.id);
+                        // Deleting the selected card must leave a valid selection.
+                        setDocument({
+                          ...snapshot(),
+                          cards: remaining,
+                          activeCardId:
+                            activeCardId === c.id ? (remaining[0]?.id ?? '') : activeCardId,
+                          activeStyleKey:
+                            activeCardId === c.id
+                              ? (remaining[0]?.styleKey ?? activeStyleKey)
+                              : activeStyleKey,
+                        });
                       }}
                     />
                   )}
@@ -839,10 +994,32 @@ export default function App() {
             }}
           >
             <AlertCircle size={16} />
-            <span>{bannerMessage}</span>
+            <span style={{ flex: 1 }}>{bannerMessage}</span>
+            {recoveryKind && (
+              <button
+                onClick={() => {
+                  downloadRecovery(recoveryKind);
+                  clearRecovery(recoveryKind);
+                  showError(null);
+                }}
+                style={{
+                  background: '#334155',
+                  border: '1px solid #fca5a5',
+                  color: '#fff',
+                  borderRadius: '4px',
+                  padding: '3px 8px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Récupérer la copie
+              </button>
+            )}
             <button
               onClick={() => {
-                setErrorBanner(null);
+                if (recoveryKind) clearRecovery(recoveryKind);
+                showError(null);
                 if (styleResolution.error) setDismissedStyleError(styleResolution.error);
               }}
               aria-label="Fermer le message d'erreur"
@@ -859,7 +1036,11 @@ export default function App() {
           </div>
         )}
 
-        <ErrorBoundary fallbackTitle="Erreur de rendu du canevas">
+        <ErrorBoundary
+          fallbackTitle="Erreur de rendu du canevas"
+          resetKey={boundaryKey}
+          onReset={resetProject}
+        >
           <div
             style={{
               borderRadius: '14px',
@@ -873,7 +1054,7 @@ export default function App() {
               height={resolvedStyle.height}
               onMouseDown={(e) => {
                 if (e.target === e.target.getStage() || e.target.name() === 'card-bg') {
-                  setSelectedFieldId(null);
+                  setUi({ selectedFieldId: null });
                 }
               }}
               onDragMove={handleLayerDragMove}
@@ -924,8 +1105,9 @@ export default function App() {
                         resolvedStyle={resolvedStyle}
                         isDesignMode={isTemplateMode}
                         isSelected={selectedFieldId === field.id}
-                        onSelect={() => setSelectedFieldId(field.id)}
+                        onSelect={() => setUi({ selectedFieldId: field.id })}
                         onChange={(updates) => updateFieldProps(field.id, updates)}
+                        onScriptError={handleScriptError}
                       />
                     );
                   })}
@@ -955,6 +1137,39 @@ export default function App() {
             </Stage>
           </div>
         </ErrorBoundary>
+
+        {/* Save status is always visible so a failed autosave cannot go unnoticed. */}
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            fontSize: '12px',
+            color: saveStatus === 'error' ? '#fca5a5' : '#94a3b8',
+            padding: '0 4px',
+          }}
+        >
+          {saveStatus === 'saving'
+            ? 'Sauvegarde en cours…'
+            : saveStatus === 'error'
+              ? 'Sauvegarde impossible (stockage plein ou indisponible)'
+              : 'Modifications sauvegardées localement'}
+          {saveStatus === 'error' && (
+            <button
+              onClick={flushSave}
+              style={{
+                marginLeft: '8px',
+                background: '#334155',
+                color: '#fff',
+                border: '1px solid #475569',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
+            >
+              Réessayer
+            </button>
+          )}
+        </div>
 
         {/* Bottom toolbar: only the controls for the active mode. */}
         <div className="io-toolbar">
@@ -1000,7 +1215,11 @@ export default function App() {
 
       {/* LEFT: Context-Aware Inspector (below deck & styles) */}
       <div className="sidebar-right">
-        <ErrorBoundary fallbackTitle="Erreur dans l'inspecteur">
+        <ErrorBoundary
+          fallbackTitle="Erreur dans l'inspecteur"
+          resetKey={boundaryKey}
+          onReset={resetProject}
+        >
           {mode === 'card' ? (
             <>
               <h3 style={{ marginTop: 0 }}>Contenu de la Carte</h3>
@@ -1009,15 +1228,22 @@ export default function App() {
                   .filter((f) => f.type !== 'box' && f.editableInCard !== false)
                   .map((field) => {
                     const currentVal = activeCard?.values[field.id] ?? field.defaultValue ?? '';
+                    const fieldInputId = `card-field-${field.id}`;
                     return (
                       <div
                         key={field.id}
                         style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
                       >
-                        <label style={{ fontSize: '13px', color: '#94a3b8' }}>{field.label}</label>
+                        <label
+                          htmlFor={fieldInputId}
+                          style={{ fontSize: '13px', color: '#94a3b8' }}
+                        >
+                          {field.label}
+                        </label>
 
                         {field.type === 'text' && (
                           <textarea
+                            id={fieldInputId}
                             rows={field.height > 60 ? 4 : 1}
                             value={currentVal}
                             onChange={(e) => updateCardValue(field.id, e.target.value)}
@@ -1034,6 +1260,7 @@ export default function App() {
 
                         {field.type === 'select' && (
                           <select
+                            id={fieldInputId}
                             value={currentVal}
                             onChange={(e) => updateCardValue(field.id, e.target.value)}
                             style={inputStyle}
@@ -1064,6 +1291,7 @@ export default function App() {
                               />
                             </label>
                             <input
+                              id={fieldInputId}
                               type="text"
                               placeholder="Ou coller une URL d'image (https://...)"
                               value={currentVal.startsWith('data:') ? '' : currentVal}
@@ -1108,7 +1336,9 @@ export default function App() {
                   <input
                     type="text"
                     value={pack.name}
-                    onChange={(e) => setPack({ ...pack, name: e.target.value })}
+                    onChange={(e) =>
+                      setPack((prev) => ({ ...prev, name: e.target.value }), 'pack-name')
+                    }
                     style={inputStyle}
                   />
                 </div>
@@ -1255,7 +1485,7 @@ export default function App() {
                             reorderComponentsByDrop(field.id);
                           }}
                           onDragEnd={() => setDraggedComponentId(null)}
-                          onClick={() => setSelectedFieldId(field.id)}
+                          onClick={() => setUi({ selectedFieldId: field.id })}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1396,7 +1626,9 @@ export default function App() {
                         type="number"
                         value={selectedField.x}
                         onChange={(e) =>
-                          updateFieldProps(selectedField.id, { x: Number(e.target.value) })
+                          updateFieldProps(selectedField.id, {
+                            x: clampNumber(e.target.value, selectedField.x, -100000, 100000),
+                          })
                         }
                         style={inputStyle}
                       />
@@ -1407,7 +1639,9 @@ export default function App() {
                         type="number"
                         value={selectedField.y}
                         onChange={(e) =>
-                          updateFieldProps(selectedField.id, { y: Number(e.target.value) })
+                          updateFieldProps(selectedField.id, {
+                            y: clampNumber(e.target.value, selectedField.y, -100000, 100000),
+                          })
                         }
                         style={inputStyle}
                       />
@@ -1418,7 +1652,9 @@ export default function App() {
                         type="number"
                         value={selectedField.width}
                         onChange={(e) =>
-                          updateFieldProps(selectedField.id, { width: Number(e.target.value) })
+                          updateFieldProps(selectedField.id, {
+                            width: clampNumber(e.target.value, selectedField.width, 1, 8192),
+                          })
                         }
                         style={inputStyle}
                       />
@@ -1429,7 +1665,9 @@ export default function App() {
                         type="number"
                         value={selectedField.height}
                         onChange={(e) =>
-                          updateFieldProps(selectedField.id, { height: Number(e.target.value) })
+                          updateFieldProps(selectedField.id, {
+                            height: clampNumber(e.target.value, selectedField.height, 1, 8192),
+                          })
                         }
                         style={inputStyle}
                       />
@@ -1442,9 +1680,14 @@ export default function App() {
                           selectedField.z ??
                           resolvedStyle.fields.findIndex((f) => f.id === selectedField.id)
                         }
-                        onChange={(e) =>
-                          updateFieldProps(selectedField.id, { z: Number(e.target.value) })
-                        }
+                        onChange={(e) => {
+                          const fallbackZ =
+                            selectedField.z ??
+                            resolvedStyle.fields.findIndex((f) => f.id === selectedField.id);
+                          updateFieldProps(selectedField.id, {
+                            z: clampNumber(e.target.value, fallbackZ, -100000, 100000),
+                          });
+                        }}
                         style={inputStyle}
                       />
                     </div>
@@ -1592,8 +1835,7 @@ export default function App() {
                               requestImageCrop(
                                 file,
                                 selectedField.width / Math.max(1, selectedField.height),
-                                (dataUrl) =>
-                                  updateFieldProps(selectedField.id, { defaultValue: dataUrl }),
+                                { kind: 'field', id: selectedField.id },
                               );
                               e.target.value = '';
                             }}
@@ -1666,7 +1908,7 @@ export default function App() {
                             value={selectedField.fontSize || 16}
                             onChange={(e) =>
                               updateFieldProps(selectedField.id, {
-                                fontSize: Number(e.target.value),
+                                fontSize: clampNumber(e.target.value, 16, 1, 512),
                               })
                             }
                             style={inputStyle}
@@ -1754,9 +1996,9 @@ return {
                         background: '#020617',
                       }}
                     />
-                    {selectedFieldScriptError && (
+                    {visibleScriptError && (
                       <div style={{ color: '#f87171', fontSize: '11px', marginTop: '4px' }}>
-                        Erreur JS : {selectedFieldScriptError}
+                        Erreur JS : {visibleScriptError}
                       </div>
                     )}
                   </div>
@@ -1777,7 +2019,11 @@ return {
           imageSrc={cropRequest.src}
           aspectRatio={cropRequest.aspectRatio}
           onCropComplete={(dataUrl) => {
-            cropRequest.onCropped(dataUrl);
+            if (cropRequest.target.kind === 'card' && cropRequest.target.fieldId) {
+              updateCardValue(cropRequest.target.fieldId, dataUrl);
+            } else {
+              updateFieldProps(cropRequest.target.id, { defaultValue: dataUrl });
+            }
             setCropRequest(null);
           }}
           onCancel={() => setCropRequest(null)}

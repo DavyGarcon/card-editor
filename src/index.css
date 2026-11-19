@@ -1,3 +1,9 @@
+/* Visible keyboard focus everywhere, including custom controls. */
+:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
+
 /* Details on the left (stacked), card/template preview on the right. */
 .app-shell {
   display: grid;
@@ -70,20 +76,22 @@
     overflow: visible;
   }
 
-  .sidebar-left {
-    max-height: none;
+  /* Show the card first on phones; the long detail forms follow. */
+  .stage-area {
     order: 1;
+    width: 100%;
+    min-height: 50vh;
+    padding: 8px;
+    justify-content: flex-start;
   }
 
-  .sidebar-right {
+  .sidebar-left {
+    max-height: none;
     order: 2;
   }
 
-  .stage-area {
+  .sidebar-right {
     order: 3;
-    width: 100%;
-    min-height: 60vh;
-    padding: 8px;
   }
 }
 
@@ -110,7 +118,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #64748b;
+  color: #94a3b8;
 }
 
 .io-button,
@@ -134,7 +142,7 @@
 
 .rich-text-editor-content:empty::before {
   content: attr(data-placeholder);
-  color: #64748b;
+  color: #94a3b8;
   pointer-events: none;
 }
 

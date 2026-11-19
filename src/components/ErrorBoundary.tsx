@@ -4,20 +4,33 @@ interface ErrorBoundaryProps {
   children: React.ReactNode;
   fallbackTitle?: string;
   onReset?: () => void;
+  /** Change this when the underlying data has been repaired: it remounts the subtree. */
+  resetKey?: string | number;
 }
 
 interface ErrorBoundaryState {
   hasError: boolean;
   errorMessage: string;
+  lastResetKey?: string | number;
 }
 
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, errorMessage: '' };
+    this.state = { hasError: false, errorMessage: '', lastResetKey: props.resetKey };
   }
 
-  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+  static getDerivedStateFromProps(
+    props: ErrorBoundaryProps,
+    state: ErrorBoundaryState,
+  ): Partial<ErrorBoundaryState> | null {
+    if (state.hasError && props.resetKey !== state.lastResetKey) {
+      return { hasError: false, errorMessage: '', lastResetKey: props.resetKey };
+    }
+    return null;
+  }
+
+  static getDerivedStateFromError(error: unknown): Partial<ErrorBoundaryState> {
     return {
       hasError: true,
       errorMessage: error instanceof Error ? error.message : String(error),

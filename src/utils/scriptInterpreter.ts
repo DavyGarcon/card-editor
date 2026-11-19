@@ -33,6 +33,27 @@ interface Token {
 
 export class ScriptSyntaxError extends Error {}
 
+// Resource limits for scripts embedded in untrusted template packs.
+const MAX_SCRIPT_LENGTH = 20_000;
+const MAX_TOKENS = 4_000;
+const MAX_STEPS = 20_000;
+const MAX_STRING_LENGTH = 200_000;
+const MAX_REPEAT = 100;
+const MAX_PAD = 10_000;
+
+let stepBudget = 0;
+
+function tick(): void {
+  if (--stepBudget < 0) throw new ScriptSyntaxError('Script trop long ou trop coûteux.');
+}
+
+function limitString(value: string): string {
+  if (value.length > MAX_STRING_LENGTH) {
+    throw new ScriptSyntaxError('Script: chaîne de résultat trop longue.');
+  }
+  return value;
+}
+
 const KEYWORDS = new Set(['const', 'let', 'return', 'true', 'false', 'null', 'undefined']);
 const MULTI_PUNCT = ['===', '!==', '==', '!=', '>=', '<=', '&&', '||', '??'];
 const SINGLE_PUNCT = new Set([
@@ -101,6 +122,9 @@ function unescape(raw: string): string {
 }
 
 function tokenize(source: string): Token[] {
+  if (source.length > MAX_SCRIPT_LENGTH) {
+    throw new ScriptSyntaxError(`Script trop long (${MAX_SCRIPT_LENGTH} caractères maximum).`);
+  }
   const tokens: Token[] = [];
   let i = 0;
 
@@ -177,6 +201,9 @@ function tokenize(source: string): Token[] {
   };
 
   while (i < source.length) {
+    if (tokens.length >= MAX_TOKENS) {
+      throw new ScriptSyntaxError(`Script trop complexe (${MAX_TOKENS} jetons maximum).`);
+    }
     const ch = source[i];
 
     if (/\s/.test(ch)) {
@@ -462,14 +489,14 @@ const STRING_METHODS: Record<string, (value: string, ...args: Value[]) => Value>
   endsWith: (v, a) => v.endsWith(String(a)),
   charAt: (v, a) => v.charAt(Number(a ?? 0)),
   indexOf: (v, a) => v.indexOf(String(a)),
-  padStart: (v, a, b) => v.padStart(Number(a ?? 0), String(b ?? ' ')),
-  padEnd: (v, a, b) => v.padEnd(Number(a ?? 0), String(b ?? ' ')),
-  repeat: (v, a) => v.repeat(Math.max(0, Number(a ?? 0))),
+  padStart: (v, a, b) => v.padStart(Math.min(MAX_PAD, Number(a ?? 0)), String(b ?? ' ')),
+  padEnd: (v, a, b) => v.padEnd(Math.min(MAX_PAD, Number(a ?? 0)), String(b ?? ' ')),
+  repeat: (v, a) => limitString(v.repeat(Math.min(MAX_REPEAT, Math.max(0, Number(a ?? 0))))),
   split: (v, a) => v.split(String(a ?? '')),
 };
 
 const ARRAY_METHODS: Record<string, (value: unknown[], ...args: Value[]) => Value> = {
-  join: (v, a) => v.join(String(a ?? ',')),
+  join: (v, a) => limitString(v.join(String(a ?? ','))),
   slice: (v, a, b) => v.slice(Number(a ?? 0), b === undefined ? undefined : Number(b)),
   includes: (v, a) => v.includes(a),
   indexOf: (v, a) => v.indexOf(a),
@@ -533,6 +560,7 @@ function memberValue(object: Value, key: Value): Value {
 }
 
 function evaluate(node: Node, scope: Map<string, Value>): Value {
+  tick();
   switch (node.kind) {
     case 'literal':
       return node.value;
@@ -541,16 +569,26 @@ function evaluate(node: Node, scope: Map<string, Value>): Value {
       if (Object.prototype.hasOwnProperty.call(GLOBALS, node.name)) return GLOBALS[node.name];
       throw new ScriptSyntaxError(`Variable inconnue « ${node.name} ».`);
     case 'template':
-      return node.parts
-        .map((part) => (part.expr ? String(evaluate(part.expr, scope) ?? '') : part.text || ''))
-        .join('');
+      return limitString(
+        node.parts
+          .map((part) => (part.expr ? String(evaluate(part.expr, scope) ?? '') : part.text || ''))
+          .join(''),
+      );
     case 'object': {
       const result: Record<string, Value> = Object.create(null);
-      for (const entry of node.entries) result[entry.key] = evaluate(entry.value, scope);
+      for (const entry of node.entries) {
+        tick();
+        result[entry.key] = evaluate(entry.value, scope);
+      }
       return Object.freeze(result);
     }
-    case 'array':
-      return Object.freeze(node.items.map((item) => evaluate(item, scope)));
+    case 'array': {
+      const items = node.items.map((item) => {
+        tick();
+        return evaluate(item, scope);
+      });
+      return Object.freeze(items);
+    }
     case 'unary': {
       const value = evaluate(node.argument, scope);
       if (node.operator === '!') return !value;
@@ -623,9 +661,12 @@ export function interpretScript(script: string, context: Record<string, Value>):
     scope.set(key, value);
   }
 
+  const previousBudget = stepBudget;
+  stepBudget = MAX_STEPS;
   try {
     let lastValue: Value = undefined;
     for (const statement of statements) {
+      tick();
       if ('kind' in statement && statement.kind === 'assignment') {
         scope.set(statement.name, evaluate(statement.value, scope));
       } else if ('kind' in statement && statement.kind === 'return') {
@@ -638,5 +679,7 @@ export function interpretScript(script: string, context: Record<string, Value>):
   } catch (error) {
     if (error instanceof ReturnSignal) return error.value;
     throw error;
+  } finally {
+    stepBudget = previousBudget;
   }
 }

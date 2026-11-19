@@ -61,11 +61,26 @@ describe('templateIO', () => {
     saveTemplateSession(session);
     expect(localStorage.getItem(TEMPLATE_STORAGE_KEY)).toBeTruthy();
     expect(localStorage.getItem(DECK_STORAGE_KEY)).toBeNull();
-    expect(loadTemplateSession(session)).toEqual(session);
+    expect(loadTemplateSession(session).session).toEqual(session);
 
     localStorage.setItem(TEMPLATE_STORAGE_KEY, 'not json');
-    expect(loadTemplateSession(session)).toEqual(session);
+    const failed = loadTemplateSession(session);
+    expect(failed.session).toEqual(session);
+    expect(failed.error).toMatch(/illisible/);
+    expect(localStorage.getItem('modern-geckos-template-recovery-v1')).toBe('not json');
     clearTemplateSession();
     expect(localStorage.getItem(TEMPLATE_STORAGE_KEY)).toBeNull();
+  });
+
+  it('reports autosave failures instead of swallowing them', () => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    try {
+      expect(saveTemplateSession(session)).toBe(false);
+    } finally {
+      Storage.prototype.setItem = original;
+    }
   });
 });

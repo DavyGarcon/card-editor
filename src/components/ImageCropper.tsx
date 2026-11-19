@@ -31,6 +31,47 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   const [error, setError] = useState<{ src: string; message: string } | null>(null);
 
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Modal semantics: focus is trapped inside, Escape cancels, focus returns to
+  // the trigger when the dialog closes.
+  useEffect(() => {
+    const modal = modalRef.current;
+    if (!modal) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusable = () =>
+      Array.from(
+        modal.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+    focusable()[0]?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onCancel]);
 
   // Viewport preview dimensions constrained within a 360x360 box
   const maxViewport = 360;
@@ -44,24 +85,33 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   useEffect(() => {
     let cancelled = false;
     const img = new Image();
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) {
+        setError({ src: imageSrc, message: "Le chargement de l'image a expiré." });
+      }
+    }, 8000);
+    const fail = (message: string) => {
+      if (!cancelled) {
+        window.clearTimeout(timeout);
+        setError({ src: imageSrc, message });
+      }
+    };
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       if (cancelled) return;
+      window.clearTimeout(timeout);
       setLoadedImage({ src: imageSrc, image: img });
       setZoom(1);
       setOffset({ x: 0, y: 0 });
     };
-    img.onerror = () => {
-      if (!cancelled) {
-        setError({
-          src: imageSrc,
-          message: "Impossible de charger l'image (vérifiez le fichier ou les droits CORS).",
-        });
-      }
-    };
+    img.onerror = () =>
+      fail("Impossible de charger l'image (vérifiez le fichier ou les droits CORS).");
     img.src = imageSrc;
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      img.onload = null;
+      img.onerror = null;
     };
   }, [imageSrc]);
 
@@ -141,6 +191,20 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     setIsDragging(false);
   };
 
+  const handleCanvasKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (!imageEl) return;
+    const step = 12;
+    let dx = 0;
+    let dy = 0;
+    if (event.key === 'ArrowLeft') dx = -step;
+    else if (event.key === 'ArrowRight') dx = step;
+    else if (event.key === 'ArrowUp') dy = -step;
+    else if (event.key === 'ArrowDown') dy = step;
+    else return;
+    event.preventDefault();
+    setOffset((prev) => clampOffset(prev.x + dx, prev.y + dy, zoom, imageEl));
+  };
+
   const handleZoomChange = (nextZoom: number) => {
     setZoom(nextZoom);
     if (imageEl) {
@@ -181,8 +245,16 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
 
   return (
     <div style={styles.backdrop}>
-      <div style={styles.modal}>
-        <h3 style={styles.title}>Recadrer l'illustration</h3>
+      <div
+        ref={modalRef}
+        style={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="image-cropper-title"
+      >
+        <h3 id="image-cropper-title" style={styles.title}>
+          Recadrer l'illustration
+        </h3>
 
         {errorMessage ? (
           <div style={styles.errorBox}>{errorMessage}</div>
@@ -197,6 +269,10 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerUp}
+                onKeyDown={handleCanvasKeyDown}
+                tabIndex={0}
+                role="img"
+                aria-label="Aperçu du recadrage — utilisez les flèches du clavier pour déplacer l'image"
                 style={{
                   ...styles.canvas,
                   cursor: isDragging ? 'grabbing' : 'grab',

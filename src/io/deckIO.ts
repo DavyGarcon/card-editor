@@ -2,6 +2,7 @@ import { CardData, CardStyleDefinition } from '../types/template';
 import { validateDeck } from '../utils/templateValidation';
 import { downloadJsonFile, jsonFileName, readTextFile } from './fileIO';
 import { DECK_FORMAT, FORMAT_VERSION, isObject, TEMPLATE_FORMAT } from './formats';
+import { storeRecovery } from './recovery';
 
 export const DECK_STORAGE_KEY = 'modern-geckos-deck-v1';
 
@@ -87,20 +88,43 @@ export function saveDeckFile(session: DeckSession): void {
   downloadJsonFile(jsonFileName(name, 'deck'), serializeDeckSession(session));
 }
 
-export function loadDeckSession(fallback: DeckSession, styles: CardStyleDefinition[]): DeckSession {
+export interface DeckLoadResult {
+  session: DeckSession;
+  error?: string;
+}
+
+export function loadDeckSession(
+  fallback: DeckSession,
+  styles: CardStyleDefinition[],
+): DeckLoadResult {
   try {
     const raw = localStorage.getItem(DECK_STORAGE_KEY);
-    return raw ? parseDeckSessionJson(raw, styles) : fallback;
-  } catch {
-    return fallback;
+    if (!raw) return { session: fallback };
+    return { session: parseDeckSessionJson(raw, styles) };
+  } catch (err) {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(DECK_STORAGE_KEY);
+    } catch {
+      // Storage is unavailable entirely.
+    }
+    if (raw) storeRecovery('deck', raw);
+    return {
+      session: fallback,
+      error: `Sauvegarde du deck illisible : ${
+        err instanceof Error ? err.message : 'erreur inconnue'
+      }. Une copie de récupération a été conservée.`,
+    };
   }
 }
 
-export function saveDeckSession(session: DeckSession): void {
+/** Returns false when storage is full/disabled so the UI can warn the user. */
+export function saveDeckSession(session: DeckSession): boolean {
   try {
     localStorage.setItem(DECK_STORAGE_KEY, serializeDeckSession(session));
+    return true;
   } catch {
-    // Storage can be full or disabled — editing must keep working regardless.
+    return false;
   }
 }
 

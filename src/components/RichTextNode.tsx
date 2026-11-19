@@ -22,6 +22,8 @@ export interface RichTextNodeProps {
   isSelected: boolean;
   onSelect: () => void;
   onChange: (updated: Partial<TemplateField>) => void;
+  canDrag?: boolean;
+  canResize?: boolean;
 }
 
 function toKonvaFontStyle(bold: boolean, italic: boolean): string {
@@ -48,6 +50,8 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
   isSelected,
   onSelect,
   onChange,
+  canDrag = true,
+  canResize = true,
 }) => {
   const groupRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -67,7 +71,7 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
 
   const handleTransformEnd = () => {
     const node = groupRef.current;
-    if (!node) return;
+    if (!node || (!canDrag && !canResize)) return;
 
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
@@ -75,10 +79,10 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
     node.scaleY(1);
 
     onChange({
-      x: Math.round(node.x()),
-      y: Math.round(node.y()),
-      width: Math.max(20, Math.round(node.width() * scaleX)),
-      height: Math.max(20, Math.round(node.height() * scaleY)),
+      x: canDrag ? Math.round(node.x()) : x,
+      y: canDrag ? Math.round(node.y()) : y,
+      width: canResize ? Math.max(20, Math.round(node.width() * scaleX)) : width,
+      height: canResize ? Math.max(20, Math.round(node.height() * scaleY)) : height,
     });
   };
 
@@ -92,12 +96,12 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
         width={width}
         height={height}
         opacity={opacity}
-        draggable={isDesignMode}
+        draggable={isDesignMode && canDrag}
         onClick={onSelect}
         onTap={onSelect}
-        onDragEnd={(e) =>
-          onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()), width, height })
-        }
+        onDragEnd={(e) => {
+          if (canDrag) onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) });
+        }}
         onTransformEnd={handleTransformEnd}
       >
         {runs.length === 0 ? (
@@ -128,6 +132,8 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
 
       {isSelected && isDesignMode && (
         <Transformer
+          name="template-transformer"
+          enabledAnchors={canResize ? undefined : []}
           ref={transformerRef}
           rotateEnabled={false}
           boundBoxFunc={(oldBox, newBox) =>

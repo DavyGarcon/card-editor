@@ -14,17 +14,22 @@ export function resolveCardStyle(
   }
   visited.add(styleKey);
 
-  const current = allStyles.find((s) => s.key === styleKey) || allStyles[0];
+  const current = allStyles.find((s) => s.key === styleKey);
   if (!current) {
-    return {
-      key: 'default',
-      name: 'Défaut',
-      width: 375,
-      height: 525,
-      backgroundColor: '#1e293b',
-      borderColor: '#f59e0b',
-      fields: [],
-    };
+    // An empty pack still needs a paintable fallback; a missing key on a real
+    // pack is a data error and must not silently render with a random style.
+    if (styleKey === '' && allStyles.length === 0) {
+      return {
+        key: 'default',
+        name: 'Défaut',
+        width: 375,
+        height: 525,
+        backgroundColor: '#1e293b',
+        borderColor: '#f59e0b',
+        fields: [],
+      };
+    }
+    throw new Error(`Le style "${styleKey}" est absent du template chargé.`);
   }
 
   if (!current.basedOn) {
@@ -48,7 +53,9 @@ export function resolveCardStyle(
   for (const cf of current.fields) {
     const existing = mergedFieldsMap.get(cf.id);
     if (existing) {
-      mergedFieldsMap.set(cf.id, { ...existing, ...cf });
+      // z-only overrides preserve every inherited property (including future
+      // parent edits) and change just the stacking order.
+      mergedFieldsMap.set(cf.id, cf.zOnly ? { ...existing, z: cf.z } : { ...existing, ...cf });
     } else {
       mergedFieldsMap.set(cf.id, { ...cf });
     }

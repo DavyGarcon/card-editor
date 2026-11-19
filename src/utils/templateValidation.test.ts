@@ -35,6 +35,42 @@ describe('validateTemplatePack', () => {
     ).toThrow(/dupliquée/);
   });
 
+  it('rejects duplicate field ids inside a style', () => {
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          {
+            ...pack.styles[0],
+            fields: [pack.styles[0].fields[0], pack.styles[0].fields[0]],
+          },
+        ],
+      }),
+    ).toThrow(/deux calques/);
+  });
+
+  it('bounds geometry, opacity and scripts', () => {
+    const baseField = pack.styles[0].fields[0];
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ ...baseField, width: 999999 }] }],
+      }),
+    ).toThrow(/compris entre/);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ ...baseField, opacity: 3 }] }],
+      }),
+    ).toThrow(/compris entre/);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ ...baseField, script: 'a'.repeat(20001) }] }],
+      }),
+    ).toThrow(/longueur maximale/);
+  });
+
   it('sanitizes rich text HTML', () => {
     const result = validateTemplatePack({
       ...pack,
@@ -69,5 +105,20 @@ describe('validateDeck', () => {
     expect(() =>
       validateDeck({ cards: [{ id: '1', styleKey: 'base', values: { rules: 42 } }] }, []),
     ).toThrow();
+  });
+
+  it('rejects duplicate card ids', () => {
+    const styles = validateTemplatePack(pack).styles;
+    expect(() =>
+      validateDeck(
+        {
+          cards: [
+            { id: '1', styleKey: 'base', values: {} },
+            { id: '1', styleKey: 'base', values: {} },
+          ],
+        },
+        styles,
+      ),
+    ).toThrow(/dupliqué/);
   });
 });

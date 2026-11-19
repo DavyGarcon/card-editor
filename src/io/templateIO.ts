@@ -2,6 +2,7 @@ import { CardTemplatePack } from '../types/template';
 import { validateTemplatePack } from '../utils/templateValidation';
 import { downloadJsonFile, jsonFileName, readTextFile } from './fileIO';
 import { DECK_FORMAT, FORMAT_VERSION, isObject, TEMPLATE_FORMAT } from './formats';
+import { storeRecovery } from './recovery';
 
 export const TEMPLATE_STORAGE_KEY = 'modern-geckos-template-v1';
 
@@ -86,20 +87,40 @@ export function saveTemplateFile(session: TemplateSession): void {
   downloadJsonFile(jsonFileName(session.pack.name, 'template'), serializeTemplateSession(session));
 }
 
-export function loadTemplateSession(fallback: TemplateSession): TemplateSession {
+export interface TemplateLoadResult {
+  session: TemplateSession;
+  error?: string;
+}
+
+export function loadTemplateSession(fallback: TemplateSession): TemplateLoadResult {
   try {
     const raw = localStorage.getItem(TEMPLATE_STORAGE_KEY);
-    return raw ? parseTemplateSessionJson(raw) : fallback;
-  } catch {
-    return fallback;
+    if (!raw) return { session: fallback };
+    return { session: parseTemplateSessionJson(raw) };
+  } catch (err) {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+    } catch {
+      // Storage is unavailable entirely.
+    }
+    if (raw) storeRecovery('template', raw);
+    return {
+      session: fallback,
+      error: `Sauvegarde du template illisible : ${
+        err instanceof Error ? err.message : 'erreur inconnue'
+      }. Une copie de récupération a été conservée.`,
+    };
   }
 }
 
-export function saveTemplateSession(session: TemplateSession): void {
+/** Returns false when storage is full/disabled so the UI can warn the user. */
+export function saveTemplateSession(session: TemplateSession): boolean {
   try {
     localStorage.setItem(TEMPLATE_STORAGE_KEY, serializeTemplateSession(session));
+    return true;
   } catch {
-    // Storage can be full or disabled — editing must keep working regardless.
+    return false;
   }
 }
 
