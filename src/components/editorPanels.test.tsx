@@ -19,7 +19,7 @@ describe('ZoomToolbar', () => {
   it('reports the zoom percentage and clamps at the limits', () => {
     const onZoomIn = vi.fn();
     const onZoomOut = vi.fn();
-    const onFit = vi.fn();
+    const onZoomChange = vi.fn();
     const { rerender } = render(
       <ZoomToolbar
         zoom={1}
@@ -27,14 +27,13 @@ describe('ZoomToolbar', () => {
         maxZoom={2}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
-        onFit={onFit}
+        onZoomChange={onZoomChange}
       />,
     );
-    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: STRINGS.zoomLevel })).toHaveValue(100);
+    expect(screen.queryByRole('button', { name: '100%' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: STRINGS.zoomIn }));
     expect(onZoomIn).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: STRINGS.zoomFit }));
-    expect(onFit).toHaveBeenCalledTimes(1);
 
     rerender(
       <ZoomToolbar
@@ -43,10 +42,37 @@ describe('ZoomToolbar', () => {
         maxZoom={2}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
-        onFit={onFit}
+        onZoomChange={onZoomChange}
       />,
     );
     expect(screen.getByRole('button', { name: STRINGS.zoomOut })).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: STRINGS.zoomLevel })).toHaveValue(25);
+  });
+
+  it('sets the zoom from a typed percentage and clamps out-of-range values', () => {
+    const onZoomChange = vi.fn();
+    render(
+      <ZoomToolbar
+        zoom={1}
+        minZoom={0.25}
+        maxZoom={2}
+        onZoomIn={vi.fn()}
+        onZoomOut={vi.fn()}
+        onZoomChange={onZoomChange}
+      />,
+    );
+    const input = screen.getByRole('spinbutton', { name: STRINGS.zoomLevel });
+
+    fireEvent.change(input, { target: { value: '150' } });
+    expect(onZoomChange).toHaveBeenLastCalledWith(1.5);
+
+    fireEvent.change(input, { target: { value: '500' } });
+    fireEvent.blur(input);
+    expect(onZoomChange).toHaveBeenLastCalledWith(2);
+
+    fireEvent.change(input, { target: { value: '10' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onZoomChange).toHaveBeenLastCalledWith(0.25);
   });
 });
 

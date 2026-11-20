@@ -55,7 +55,7 @@ export const STRINGS = {
   cancel: 'Annuler',
   zoomIn: 'Zoom avant',
   zoomOut: 'Zoom arrière',
-  zoomFit: 'Ajuster',
+  zoomLevel: 'Zoom (%)',
   closeMessage: "Fermer le message d'erreur",
   newCard: 'Nouvelle Carte',
   untitled: 'Sans titre',

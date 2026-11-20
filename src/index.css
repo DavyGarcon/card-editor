@@ -32,6 +32,23 @@
   padding: 5px 8px;
 }
 
+.zoom-value {
+  width: 62px;
+  padding: 4px 6px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-raised);
+  border-radius: 6px;
+}
+
+.zoom-value-suffix {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-left: -4px;
+}
+
 /* Deck/style controls on the left, preview in the middle, all card/template
    details on the right of the preview (in both modes). */
 .app-shell {
@@ -63,12 +80,37 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
+  align-items: stretch;
   background: var(--color-bg-deep);
+  overflow: hidden;
+  padding: 0;
+}
+
+/* The zoom toolbar stays pinned above the scrollable preview, so it remains
+   visible and reachable even when the card is wider than the viewport. */
+.stage-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.stage-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
   overflow: auto;
   padding: 16px;
+  box-sizing: border-box;
+}
+
+/* Center the card when there is room. Auto margins collapse to 0 once the card
+   is larger than the viewport, so a wide card stays fully scrollable. */
+.stage-scroll > * {
+  margin: auto;
 }
 
 .sidebar-right {

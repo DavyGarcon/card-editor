@@ -196,18 +196,6 @@ export default function App() {
   }, [currentStyleKey, pack.styles]);
   const resolvedStyle = styleResolution.style;
 
-  const fitToView = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport || viewport.clientWidth <= 0 || viewport.clientHeight <= 0) return;
-    const availableWidth = Math.max(1, viewport.clientWidth - 64);
-    const availableHeight = Math.max(1, viewport.clientHeight - 190);
-    const fitted = Math.min(
-      availableWidth / resolvedStyle.width,
-      availableHeight / resolvedStyle.height,
-    );
-    setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(Math.min(1, fitted) * 100) / 100)));
-  }, [resolvedStyle.width, resolvedStyle.height]);
-
   // Template mode previews the template's defaults, not the active card's data.
   const previewCardValues = useMemo(
     () =>
@@ -1308,121 +1296,126 @@ export default function App() {
           />
         )}
 
-        <ZoomToolbar
-          zoom={zoom}
-          minZoom={MIN_ZOOM}
-          maxZoom={MAX_ZOOM}
-          onZoomOut={() => setZoom((z) => Math.max(MIN_ZOOM, Math.round(z * 0.9 * 100) / 100))}
-          onZoomIn={() => setZoom((z) => Math.min(MAX_ZOOM, Math.round(z * 1.1 * 100) / 100))}
-          onFit={fitToView}
-        />
+        <div className="stage-toolbar">
+          <ZoomToolbar
+            zoom={zoom}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            onZoomOut={() => setZoom((z) => Math.max(MIN_ZOOM, Math.round(z * 0.9 * 100) / 100))}
+            onZoomIn={() => setZoom((z) => Math.min(MAX_ZOOM, Math.round(z * 1.1 * 100) / 100))}
+            onZoomChange={setZoom}
+          />
+        </div>
 
-        <ErrorBoundary
-          fallbackTitle="Erreur de rendu du canevas"
-          resetKey={boundaryKey}
-          onReset={resetWorkspace}
-        >
-          <div
-            style={{
-              width: resolvedStyle.width * zoom,
-              height: resolvedStyle.height * zoom,
-              flex: '0 0 auto',
-              transform: `scale(${zoom})`,
-              transformOrigin: 'top left',
-              borderRadius: '14px',
-              overflow: 'hidden',
-              boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.7)',
-            }}
+        <div className="stage-scroll">
+          <ErrorBoundary
+            fallbackTitle="Erreur de rendu du canevas"
+            resetKey={boundaryKey}
+            onReset={resetWorkspace}
           >
-            <Stage
-              ref={stageRef}
-              width={resolvedStyle.width}
-              height={resolvedStyle.height}
-              onMouseDown={(e) => {
-                if (e.target === e.target.getStage() || e.target.name() === 'card-bg') {
-                  setUi({ selectedFieldId: null });
-                }
+            <div
+              style={{
+                width: resolvedStyle.width * zoom,
+                height: resolvedStyle.height * zoom,
+                flex: '0 0 auto',
+                borderRadius: '14px',
+                overflow: 'hidden',
+                boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.7)',
               }}
-              onDragMove={handleLayerDragMove}
-              onDragEnd={handleLayerDragEnd}
             >
-              <Layer>
-                <Rect
-                  name="card-bg"
-                  x={0}
-                  y={0}
-                  width={resolvedStyle.width}
-                  height={resolvedStyle.height}
-                  fill={resolvedStyle.backgroundColor}
-                  stroke={resolvedStyle.borderColor}
-                  strokeWidth={12}
-                />
+              <Stage
+                ref={stageRef}
+                width={resolvedStyle.width * zoom}
+                height={resolvedStyle.height * zoom}
+                scaleX={zoom}
+                scaleY={zoom}
+                onMouseDown={(e) => {
+                  if (e.target === e.target.getStage() || e.target.name() === 'card-bg') {
+                    setUi({ selectedFieldId: null });
+                  }
+                }}
+                onDragMove={handleLayerDragMove}
+                onDragEnd={handleLayerDragEnd}
+              >
+                <Layer>
+                  <Rect
+                    name="card-bg"
+                    x={0}
+                    y={0}
+                    width={resolvedStyle.width}
+                    height={resolvedStyle.height}
+                    fill={resolvedStyle.backgroundColor}
+                    stroke={resolvedStyle.borderColor}
+                    strokeWidth={12}
+                  />
 
-                {[...resolvedStyle.fields]
-                  .map((field, index) => ({ field, index }))
-                  .sort(
-                    (a, b) => (a.field.z ?? a.index) - (b.field.z ?? b.index) || a.index - b.index,
-                  )
-                  .map(({ field }) => {
-                    const isTemplateMode = mode === 'template';
-                    const isCardEditable = field.editableInCard !== false;
-                    const cardRawValue = isCardEditable
-                      ? (activeCard?.values[field.id] ?? field.defaultValue ?? '')
-                      : (field.defaultValue ?? '');
-                    return (
-                      <DraggableFieldNode
-                        key={field.id}
-                        field={field}
-                        rawValue={
-                          isTemplateMode
-                            ? (previewCardValues[field.id] ?? field.defaultValue ?? '')
-                            : cardRawValue
-                        }
-                        allCardValues={
-                          isTemplateMode
-                            ? previewCardValues
-                            : isCardEditable
-                              ? (activeCard?.values ?? {})
-                              : {
-                                  ...(activeCard?.values ?? {}),
-                                  [field.id]: field.defaultValue ?? '',
-                                }
-                        }
-                        resolvedStyle={resolvedStyle}
-                        isDesignMode={isTemplateMode}
-                        isSelected={selectedFieldId === field.id}
-                        onSelect={() => setUi({ selectedFieldId: field.id })}
-                        onChange={(updates) => updateFieldProps(field.id, updates)}
-                        onScriptError={handleScriptError}
+                  {[...resolvedStyle.fields]
+                    .map((field, index) => ({ field, index }))
+                    .sort(
+                      (a, b) =>
+                        (a.field.z ?? a.index) - (b.field.z ?? b.index) || a.index - b.index,
+                    )
+                    .map(({ field }) => {
+                      const isTemplateMode = mode === 'template';
+                      const isCardEditable = field.editableInCard !== false;
+                      const cardRawValue = isCardEditable
+                        ? (activeCard?.values[field.id] ?? field.defaultValue ?? '')
+                        : (field.defaultValue ?? '');
+                      return (
+                        <DraggableFieldNode
+                          key={field.id}
+                          field={field}
+                          rawValue={
+                            isTemplateMode
+                              ? (previewCardValues[field.id] ?? field.defaultValue ?? '')
+                              : cardRawValue
+                          }
+                          allCardValues={
+                            isTemplateMode
+                              ? previewCardValues
+                              : isCardEditable
+                                ? (activeCard?.values ?? {})
+                                : {
+                                    ...(activeCard?.values ?? {}),
+                                    [field.id]: field.defaultValue ?? '',
+                                  }
+                          }
+                          resolvedStyle={resolvedStyle}
+                          isDesignMode={isTemplateMode}
+                          isSelected={selectedFieldId === field.id}
+                          onSelect={() => setUi({ selectedFieldId: field.id })}
+                          onChange={(updates) => updateFieldProps(field.id, updates)}
+                          onScriptError={handleScriptError}
+                        />
+                      );
+                    })}
+
+                  {guides.map((guide, i) =>
+                    guide.orientation === 'H' ? (
+                      <Line
+                        key={`h-${i}`}
+                        points={[0, guide.position, resolvedStyle.width, guide.position]}
+                        stroke="#38bdf8"
+                        strokeWidth={1}
+                        dash={[4, 4]}
+                        listening={false}
                       />
-                    );
-                  })}
-
-                {guides.map((guide, i) =>
-                  guide.orientation === 'H' ? (
-                    <Line
-                      key={`h-${i}`}
-                      points={[0, guide.position, resolvedStyle.width, guide.position]}
-                      stroke="#38bdf8"
-                      strokeWidth={1}
-                      dash={[4, 4]}
-                      listening={false}
-                    />
-                  ) : (
-                    <Line
-                      key={`v-${i}`}
-                      points={[guide.position, 0, guide.position, resolvedStyle.height]}
-                      stroke="#38bdf8"
-                      strokeWidth={1}
-                      dash={[4, 4]}
-                      listening={false}
-                    />
-                  ),
-                )}
-              </Layer>
-            </Stage>
-          </div>
-        </ErrorBoundary>
+                    ) : (
+                      <Line
+                        key={`v-${i}`}
+                        points={[guide.position, 0, guide.position, resolvedStyle.height]}
+                        stroke="#38bdf8"
+                        strokeWidth={1}
+                        dash={[4, 4]}
+                        listening={false}
+                      />
+                    ),
+                  )}
+                </Layer>
+              </Stage>
+            </div>
+          </ErrorBoundary>
+        </div>
 
         {/* Bottom toolbar: only the reset action remains; deck I/O and exports are above "Ajouter une Carte". */}
         <div className="io-toolbar">
@@ -1577,6 +1570,45 @@ export default function App() {
                   />
                 </div>
 
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label htmlFor="card-style-width" style={labelStyle}>
+                      Largeur carte (px)
+                    </label>
+                    <input
+                      id="card-style-width"
+                      type="number"
+                      min={1}
+                      max={8192}
+                      value={resolvedStyle.width}
+                      onChange={(e) =>
+                        updateActiveStyleMeta({
+                          width: clampNumber(e.target.value, resolvedStyle.width, 1, 8192),
+                        })
+                      }
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label htmlFor="card-style-height" style={labelStyle}>
+                      Hauteur carte (px)
+                    </label>
+                    <input
+                      id="card-style-height"
+                      type="number"
+                      min={1}
+                      max={8192}
+                      value={resolvedStyle.height}
+                      onChange={(e) =>
+                        updateActiveStyleMeta({
+                          height: clampNumber(e.target.value, resolvedStyle.height, 1, 8192),
+                        })
+                      }
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label style={labelStyle}>Hérite du style (basedOn)</label>
                   <select
@@ -1597,21 +1629,17 @@ export default function App() {
                   </select>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <div style={{ flex: 1 }}>
-                    <ColorPicker
-                      label="Fond"
-                      value={resolvedStyle.backgroundColor}
-                      onChange={(backgroundColor) => updateActiveStyleMeta({ backgroundColor })}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <ColorPicker
-                      label="Bordure"
-                      value={resolvedStyle.borderColor}
-                      onChange={(borderColor) => updateActiveStyleMeta({ borderColor })}
-                    />
-                  </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <ColorPicker
+                    label="Fond"
+                    value={resolvedStyle.backgroundColor}
+                    onChange={(backgroundColor) => updateActiveStyleMeta({ backgroundColor })}
+                  />
+                  <ColorPicker
+                    label="Bordure"
+                    value={resolvedStyle.borderColor}
+                    onChange={(borderColor) => updateActiveStyleMeta({ borderColor })}
+                  />
                 </div>
               </div>
 

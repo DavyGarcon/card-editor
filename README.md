@@ -7,7 +7,7 @@
 ## Features
 
 - **Dual-Mode Workspace**:
-  - **Template Designer Mode**: Drag, resize, and snap text boxes, frames, dropdown-driven layers, and image slots directly on the HTML5 canvas.
+  - **Template Designer Mode**: Edit the card width and height, and drag, resize, and snap text boxes, frames, dropdown-driven layers, and image slots directly on the HTML5 canvas.
   - **Card Editor Mode**: Automatically generates tailored input forms (text fields, multi-line textareas, dropdown menus, image uploaders, and a rich-text editor) from the active template style.
 - **Rich Text Layers**: A `richtext` field type with an inline toolbar (bold, italic, underline, bullet lists, and game-symbol tokens). Content is stored as HTML and rendered on the Konva canvas with matching styling, word wrapping, and alignment.
 - **Magnetic Snapping & Alignment Guides**: Snaps layers automatically to canvas edges, centerlines, and neighboring elements with visual alignment guides while dragging.

@@ -17,8 +17,30 @@ vi.mock('konva', () => ({
 }));
 
 vi.mock('react-konva', () => ({
-  Stage: ({ children }: { children?: ReactNode }) =>
-    createElement('div', { 'data-testid': 'stage' }, children),
+  Stage: ({
+    children,
+    width,
+    height,
+    scaleX,
+    scaleY,
+  }: {
+    children?: ReactNode;
+    width?: number;
+    height?: number;
+    scaleX?: number;
+    scaleY?: number;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-testid': 'stage',
+        'data-stage-width': width,
+        'data-stage-height': height,
+        'data-stage-scale-x': scaleX,
+        'data-stage-scale-y': scaleY,
+      },
+      children,
+    ),
   Layer: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Group: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Rect: () => null,
@@ -149,6 +171,71 @@ describe('App integration', () => {
     ).toBe('');
     expect(within(templateGroup).getByLabelText('Charger un template').textContent).toBe('');
     expect(templateGroup.querySelector('.io-group-actions')).not.toBeNull();
+  });
+
+  it('edits the card width and height in template mode', () => {
+    render(<App />);
+    expect(
+      screen.queryByRole('spinbutton', { name: 'Largeur carte (px)' }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    const width = screen.getByRole('spinbutton', { name: 'Largeur carte (px)' });
+    const height = screen.getByRole('spinbutton', { name: 'Hauteur carte (px)' });
+    expect(width).toHaveValue(375);
+    expect(height).toHaveValue(525);
+
+    fireEvent.change(width, { target: { value: '500' } });
+    fireEvent.change(height, { target: { value: '700' } });
+    expect(width).toHaveValue(500);
+    expect(height).toHaveValue(700);
+  });
+
+  it('stacks the border color control below the background color control in template mode', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+
+    const background = screen.getByText('Fond');
+    const border = screen.getByText('Bordure');
+    expect(
+      background.compareDocumentPosition(border) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const container = background.parentElement?.parentElement as HTMLElement;
+    expect(container.style.flexDirection).toBe('column');
+  });
+
+  it('scales the whole card instead of clipping it when zoomed out', () => {
+    render(<App />);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Zoom (%)' }), {
+      target: { value: '50' },
+    });
+
+    const stage = screen.getByTestId('stage');
+    expect(stage).toHaveAttribute('data-stage-width', '187.5');
+    expect(stage).toHaveAttribute('data-stage-height', '262.5');
+    expect(stage).toHaveAttribute('data-stage-scale-x', '0.5');
+    expect(stage).toHaveAttribute('data-stage-scale-y', '0.5');
+
+    const wrapper = stage.parentElement as HTMLElement;
+    expect(wrapper.style.transform).toBe('');
+    expect(wrapper.style.width).toBe('187.5px');
+    expect(wrapper.style.height).toBe('262.5px');
+  });
+
+  it('keeps the zoom toolbar pinned above the scrollable preview in template mode', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+
+    const zoomGroup = screen.getByRole('group', { name: "Zoom de l'aperçu" });
+    const pinnedToolbar = document.querySelector('.stage-toolbar');
+    const scrollArea = document.querySelector('.stage-scroll');
+    const stage = screen.getByTestId('stage');
+
+    expect(pinnedToolbar).not.toBeNull();
+    expect(scrollArea).not.toBeNull();
+    expect(pinnedToolbar).toContainElement(zoomGroup);
+    expect(scrollArea).toContainElement(stage);
+    expect(pinnedToolbar).not.toContainElement(stage);
   });
 
   it('Ctrl+S saves the deck in card mode and the template in template mode', async () => {

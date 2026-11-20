@@ -1,4 +1,5 @@
-import { AlertCircle, HelpCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { useState } from 'react';
+import { AlertCircle, HelpCircle, ZoomIn, ZoomOut } from 'lucide-react';
 import { STRINGS } from '../i18n/strings';
 import { clampNumber } from '../utils/numbers';
 import {
@@ -56,7 +57,7 @@ export interface ZoomToolbarProps {
   maxZoom: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  onFit: () => void;
+  onZoomChange: (zoom: number) => void;
 }
 
 export function ZoomToolbar({
@@ -65,8 +66,36 @@ export function ZoomToolbar({
   maxZoom,
   onZoomIn,
   onZoomOut,
-  onFit,
+  onZoomChange,
 }: ZoomToolbarProps) {
+  // `draft` is only set while the user is typing; otherwise the value is
+  // derived from the zoom prop so external zoom changes stay in sync.
+  const [draft, setDraft] = useState<string | null>(null);
+  const displayed = draft ?? String(Math.round(zoom * 100));
+
+  const commit = (raw: string) => {
+    const parsed = Number(raw);
+    const percent =
+      raw.trim() !== '' && Number.isFinite(parsed)
+        ? Math.min(maxZoom * 100, Math.max(minZoom * 100, parsed))
+        : zoom * 100;
+    setDraft(null);
+    onZoomChange(Math.round(percent) / 100);
+  };
+
+  const handleChange = (raw: string) => {
+    setDraft(raw);
+    const parsed = Number(raw);
+    if (
+      raw.trim() !== '' &&
+      Number.isFinite(parsed) &&
+      parsed >= minZoom * 100 &&
+      parsed <= maxZoom * 100
+    ) {
+      onZoomChange(Math.round(parsed) / 100);
+    }
+  };
+
   return (
     <div className="zoom-toolbar" role="group" aria-label="Zoom de l'aperçu">
       <button
@@ -78,8 +107,23 @@ export function ZoomToolbar({
       >
         <ZoomOut size={15} />
       </button>
-      <span aria-live="polite" style={{ minWidth: '46px', textAlign: 'center', fontSize: '12px' }}>
-        {Math.round(zoom * 100)}%
+      <input
+        type="number"
+        className="zoom-value"
+        aria-label={STRINGS.zoomLevel}
+        title={STRINGS.zoomLevel}
+        min={minZoom * 100}
+        max={maxZoom * 100}
+        step={1}
+        value={displayed}
+        onChange={(event) => handleChange(event.target.value)}
+        onBlur={(event) => commit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit(event.currentTarget.value);
+        }}
+      />
+      <span className="zoom-value-suffix" aria-hidden="true">
+        %
       </span>
       <button
         onClick={onZoomIn}
@@ -89,9 +133,6 @@ export function ZoomToolbar({
         className="io-button"
       >
         <ZoomIn size={15} />
-      </button>
-      <button onClick={onFit} title={STRINGS.zoomFit} className="io-button">
-        <Maximize2 size={15} /> {STRINGS.zoomFit}
       </button>
     </div>
   );
