@@ -6,7 +6,7 @@
 export function loadImage(
   src: string,
   timeoutMs = 8000,
-  crossOrigin: string | undefined = 'anonymous',
+  crossOrigin: string | null = 'anonymous',
 ): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     if (!src) {
@@ -24,7 +24,7 @@ export function loadImage(
       resolve(result);
     };
     const timeout = window.setTimeout(() => finish(null), timeoutMs);
-    if (crossOrigin !== undefined) img.crossOrigin = crossOrigin;
+    if (crossOrigin !== null) img.crossOrigin = crossOrigin;
     img.onload = () => finish(img);
     img.onerror = () => finish(null);
     img.src = src;
@@ -69,7 +69,7 @@ const TARGET_QUALITY = 0.82;
 export async function compressImageBlob(blob: Blob): Promise<Blob> {
   const objectUrl = URL.createObjectURL(blob);
   try {
-    const img = await loadImage(objectUrl, 10_000, undefined);
+    const img = await loadImage(objectUrl, 10_000, null);
     if (!img) return blob;
     const longestEdge = Math.max(img.naturalWidth, img.naturalHeight);
     if (!Number.isFinite(longestEdge) || longestEdge <= 0) return blob;

@@ -14,7 +14,9 @@ export function useImage(ref: string | undefined, timeoutMs = 8000): HTMLImageEl
     let cancelled = false;
     resolveImageRef(ref).then((src) => {
       if (cancelled || !src) return;
-      loadImage(src, timeoutMs).then((loaded) => {
+      // The live preview only paints the image; it does not read canvas pixels,
+      // so avoid CORS mode here or ordinary external URLs would fail to render.
+      loadImage(src, timeoutMs, null).then((loaded) => {
         if (!cancelled) setState({ ref, image: loaded });
       });
     });

@@ -50,6 +50,12 @@ describe('imageLoader', () => {
       expect(image?.crossOrigin).toBe('anonymous');
     });
 
+    it('can load without CORS mode for the live preview', async () => {
+      const image = await loadImage('good', 8000, null);
+      expect(image).not.toBeNull();
+      expect(image?.crossOrigin).toBeNull();
+    });
+
     it('resolves null on image error', async () => {
       expect(await loadImage('bad')).toBeNull();
     });

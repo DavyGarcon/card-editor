@@ -1,0 +1,96 @@
+import { describe, expect, it, vi } from 'vitest';
+
+const konvaState = vi.hoisted(() => ({
+  images: [] as Array<{ image: { src?: string } }>,
+}));
+
+vi.mock('konva', () => {
+  class MockNode {
+    children: MockNode[] = [];
+    constructor(public config: Record<string, unknown> = {}) {}
+    add(...nodes: MockNode[]) {
+      this.children.push(...nodes);
+    }
+  }
+  class MockImage extends MockNode {
+    constructor(config: { image: { src?: string } }) {
+      super(config);
+      konvaState.images.push(config);
+    }
+  }
+  class MockStage extends MockNode {
+    toDataURL() {
+      return 'data:image/png;base64,AAAA';
+    }
+    destroy() {}
+  }
+  return {
+    default: {
+      Group: MockNode,
+      Image: MockImage,
+      Layer: MockNode,
+      Rect: MockNode,
+      Stage: MockStage,
+      Text: MockNode,
+    },
+  };
+});
+
+vi.mock('../io/imageStore', () => ({
+  resolveImageRef: vi.fn(async (src: string) => src),
+}));
+
+vi.mock('./imageLoader', () => ({
+  loadImage: vi.fn(async (src: string) => ({ src })),
+}));
+
+import { CardData, ResolvedCardStyle } from '../types/template';
+import { renderCardToDataUrl } from './cardRenderer';
+
+const style = {
+  key: 'base',
+  name: 'Base',
+  width: 100,
+  height: 100,
+  backgroundColor: '#000000',
+  borderColor: '#ffffff',
+  fields: [
+    {
+      id: 'root',
+      label: 'Root',
+      type: 'image',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      defaultValue: 'idb:template',
+    },
+    {
+      id: 'child',
+      label: 'Child',
+      type: 'image',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      linkedTo: 'root',
+      script: 'return { src: "/override.png" };',
+    },
+  ],
+} as ResolvedCardStyle;
+
+describe('renderCardToDataUrl linked images', () => {
+  it('renders every linked image from the shared root source', async () => {
+    konvaState.images.length = 0;
+    const card = {
+      id: 'card-1',
+      styleKey: 'base',
+      values: { root: 'idb:card' },
+    } as CardData;
+
+    await renderCardToDataUrl(card, style);
+
+    expect(konvaState.images).toHaveLength(2);
+    expect(konvaState.images.map((config) => config.image.src)).toEqual(['idb:card', 'idb:card']);
+  });
+});

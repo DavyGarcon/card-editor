@@ -166,6 +166,57 @@ describe('validateTemplatePack', () => {
     ).toThrow(/rotation doit être compris/);
   });
 
+  it('validates linked image sources', () => {
+    const artwork = {
+      id: 'artwork',
+      label: 'Artwork',
+      type: 'image',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      defaultValue: 'idb:shared',
+    };
+    const badge = { ...artwork, id: 'badge', linkedTo: 'artwork' };
+    const fields = [artwork, badge];
+
+    expect(
+      validateTemplatePack({ ...pack, styles: [{ ...pack.styles[0], fields }] }).styles[0]
+        .fields[1],
+    ).toMatchObject({ id: 'badge', linkedTo: 'artwork' });
+    expect(
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [artwork, { ...badge, linkedTo: '' }] }],
+      }).styles[0].fields[1].linkedTo,
+    ).toBe('');
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          { ...pack.styles[0], fields: [{ ...pack.styles[0].fields[0], linkedTo: 'artwork' }] },
+        ],
+      }),
+    ).toThrow(/uniquement aux images|ne s'applique qu'aux images/);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ ...artwork, linkedTo: 'missing' }] }],
+      }),
+    ).toThrow(/inexistante/);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          {
+            ...pack.styles[0],
+            fields: [{ ...artwork, linkedTo: 'badge' }, badge],
+          },
+        ],
+      }),
+    ).toThrow(/boucle de liens/);
+  });
+
   it('sanitizes rich text HTML', () => {
     const result = validateTemplatePack({
       ...pack,

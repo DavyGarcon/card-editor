@@ -39,6 +39,8 @@ export interface TemplateField {
   options?: SelectOption[];
   // Image options
   opacity?: number;
+  /** For image fields: id of another image field whose source is shared. */
+  linkedTo?: string;
   // Editable in card mode (default: true)
   editableInCard?: boolean;
   // Custom JS rendering script

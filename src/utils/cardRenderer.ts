@@ -5,6 +5,13 @@ import { parseRichTextToSegments } from '../components/RichTextEditor';
 import { layoutRichText } from './richTextLayout';
 import { resolveImageRef } from '../io/imageStore';
 import { loadImage } from './imageLoader';
+import {
+  getImageLinkMembers,
+  getLinkedImageIds,
+  getSharedImageSource,
+  isImageSourceEditableInCard,
+  resolveImageLinkRoot,
+} from './imageLinks';
 
 /** Renders a card into a detached Konva stage — no live UI state is touched. */
 export async function renderCardToDataUrl(
@@ -39,15 +46,33 @@ export async function renderCardToDataUrl(
       .sort((a, b) => (a.field.z ?? a.index) - (b.field.z ?? b.index) || a.index - b.index);
 
     const imageLoads: Array<Promise<void>> = [];
+    const linkedImageIds = getLinkedImageIds(style.fields);
 
     for (const { field } of ordered) {
-      const editable = field.editableInCard !== false;
+      const sourceField =
+        field.type === 'image' ? resolveImageLinkRoot(field, style.fields) : field;
+      const editable =
+        field.type === 'image'
+          ? isImageSourceEditableInCard(field, style.fields)
+          : field.editableInCard !== false;
       const rawValue = editable
-        ? (card.values[field.id] ?? field.defaultValue ?? '')
-        : (field.defaultValue ?? '');
+        ? field.type === 'image'
+          ? getSharedImageSource(field, style.fields, card.values)
+          : (card.values[field.id] ?? field.defaultValue ?? '')
+        : (sourceField.defaultValue ?? '');
+      // Scripts see the same source for every image in a link group.
+      const sharedValues =
+        field.type === 'image'
+          ? Object.fromEntries(
+              getImageLinkMembers(sourceField.id, style.fields).map((member) => [
+                member.id,
+                rawValue,
+              ]),
+            )
+          : {};
       const cardValues = editable
-        ? card.values
-        : { ...card.values, [field.id]: field.defaultValue ?? '' };
+        ? { ...card.values, ...sharedValues }
+        : { ...card.values, [field.id]: sourceField.defaultValue ?? '', ...sharedValues };
       const computed = evaluateFieldScript(field.script, {
         card: cardValues,
         style: style as unknown as Record<string, unknown>,
@@ -167,7 +192,7 @@ export async function renderCardToDataUrl(
       }
 
       if (field.type === 'image') {
-        const src = computed.src ?? rawValue ?? '';
+        const src = linkedImageIds.has(field.id) ? rawValue : (computed.src ?? rawValue ?? '');
         const group = new Konva.Group({ x, y, width, height, ...transform, opacity });
         const placeholder = () => {
           group.add(

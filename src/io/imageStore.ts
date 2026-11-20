@@ -30,18 +30,21 @@ export async function storeImageBlob(blob: Blob): Promise<string> {
     return blobToDataUrl(compressed);
   }
   const id = newId();
-  await new Promise<void>((resolve) => {
-    try {
+  try {
+    await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(IMAGE_STORE, 'readwrite');
       transaction.objectStore(IMAGE_STORE).put(compressed, id);
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => resolve();
-      transaction.onabort = () => resolve();
-    } catch {
-      resolve();
-    }
-  });
-  return `${IMAGE_REF_PREFIX}${id}`;
+      transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB write failed.'));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error('IndexedDB write aborted.'));
+    });
+    return `${IMAGE_REF_PREFIX}${id}`;
+  } catch {
+    // A dead `idb:` ref would render as a permanent placeholder; keep the
+    // image inline instead when the transaction cannot be completed.
+    return blobToDataUrl(compressed);
+  }
 }
 
 export async function storeImageDataUrl(dataUrl: string): Promise<string> {

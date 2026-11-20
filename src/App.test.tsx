@@ -191,6 +191,45 @@ describe('App integration', () => {
     expect(height).toHaveValue(700);
   });
 
+  it('links image sources in template mode and edits them once in card mode', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    fireEvent.click(screen.getByRole('button', { name: /\+ Image$/ }));
+
+    const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
+    expect(
+      within(tree)
+        .getAllByRole('option')
+        .filter((option) => option.textContent?.includes('Illustration')),
+    ).toHaveLength(2);
+
+    const link = screen.getByRole('combobox', { name: 'Image liée à' }) as HTMLSelectElement;
+    const target = Array.from(link.options).find((option) =>
+      option.textContent?.includes('(artwork)'),
+    );
+    expect(target).toBeDefined();
+    fireEvent.change(link, { target: { value: target!.value } });
+    expect(screen.getByText(/Source partagée — 2 images/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cartes' }));
+    expect(screen.queryByRole('combobox', { name: 'Image liée à' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
+    const sharedInput = screen.getByRole('textbox', { name: /Illustration/ });
+    expect(sharedInput.closest('div')?.parentElement).toHaveTextContent('Source partagée (2)');
+    fireEvent.change(sharedInput, { target: { value: 'https://example.com/shared.png' } });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saveDeckFile).toHaveBeenCalledTimes(1));
+    const deck = saveDeckFile.mock.calls[0][0] as {
+      cards: Array<{ values: Record<string, string> }>;
+    };
+    expect(deck.cards[0].values).toMatchObject({
+      title: 'Nouvelle Carte',
+      artwork: 'https://example.com/shared.png',
+    });
+    expect(Object.keys(deck.cards[0].values)).toHaveLength(2);
+  });
+
   it('stacks the border color control below the background color control in template mode', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));

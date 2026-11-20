@@ -15,7 +15,7 @@
 - **Magnetic Snapping & Alignment Guides**: Snaps layers automatically to canvas edges, centerlines, and neighboring elements with visual alignment guides while dragging.
 - **Style Inheritance (`basedOn`)**: Bundle multiple card layouts (e.g., _Base Card_, _Spell_, _Weapon_, _Legendary_) inside a single Template Pack JSON. Child styles inherit dimensions, colors, and layers from parent styles and override only what changes. Reordering an inherited layer creates a `zOnly` override that preserves every other inherited property.
 - **Dynamic JavaScript Render Scripts**: Attach custom JS logic to any layer (`script`) to dynamically alter text, colors, geometry, rotation, mirroring, or conditional visibility (`visible`) based on the card's current field values. Supports `const`/`let`, assignment, `if`/`else`, blocks and `return`; syntax/runtime errors report a 1-based line number, and each evaluation has a step budget. An inline script help panel lists the available variables and overrides.
-- **Custom Artwork Support**: Upload local images or link external image URLs with adjustable opacity and bounding frames. Uploads open an interactive cropper with a configurable export resolution; artwork is compressed and stored as Blobs in IndexedDB (saved files keep short `idb:` refs). Legacy Data URLs are still supported, and object URLs are cleaned up when images are deleted or pruned. Layers can use dynamically loaded Google Fonts.
+- **Custom Artwork & Linked Images**: Upload local images or link external image URLs with adjustable opacity and bounding frames. In Template Mode, an image layer can be linked to another image layer; all members of a link group then share one source. Card Mode shows a **single** source editor/upload per group (labelled **Source partagée**), and the shared source is used by the live preview and PNG/PDF exports. Uploads open an interactive cropper with a configurable export resolution; artwork is compressed and stored as Blobs in IndexedDB (saved files keep short `idb:` refs). Legacy Data URLs are still supported, and object URLs are cleaned up when images are deleted or pruned. Layers can use dynamically loaded Google Fonts.
 - **History**: Undo/redo (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl/Cmd+Y`) covers 50 **full-session** snapshots, including the active style, card, layer selection, and mode. `Réinitialiser` returns to the built-in template with an empty deck and clears history so old sessions cannot be undone.
 - **Separate Portable Files**: There is no project file and no document autosave. The only save/load notions are the template pack (`*-template.json`) and the card deck (`*-deck.json`). All imports are validated and rich-text HTML is sanitized before rendering. `Ctrl/Cmd+S` saves the deck in Card mode and the template in Template mode. Old combined project JSON is rejected.
 - **Print-Ready Exports**:
@@ -194,8 +194,10 @@ Every color property (`backgroundColor`, `borderColor`, `color`, `fill`, `stroke
   - Stores HTML in `card.values[id]` (e.g. `<b>Fire</b> damage`). Supports `<b>/<strong>`, `<i>/<em>`, `<u>`, `<br>`, and `<ul>/<li>`.
   - A `script` can override the rendered HTML by returning `{ text: "<b>...</b>" }`.
 - **`type: "image"`** (Renders artwork on canvas + File Upload / URL input in Card Mode)
-  - `defaultValue` (`string`, optional): Default fallback image URL or Data URL. A script can override it by returning `{ src: "..." }`.
+  - `defaultValue` (`string`, optional): Default fallback image URL or Data URL. A script can override it by returning `{ src: "..." }` for an unlinked image. External URLs render in the live preview even without CORS headers; PNG/PDF export still requires same-origin or CORS-enabled images because it reads canvas pixels.
   - `opacity` (`number`, default `1`): Layer transparency from `0` to `1`.
+  - `linkedTo` (`string`, optional): Id of another image field in the same resolved style whose source this image shares. Links may be chained (`C → B → A`); the first image in the chain owns the source. Use `""` to explicitly clear an inherited link. In Template Mode, choose **Image liée à** in the image inspector. Imported packs reject links to missing/non-image fields and cycles.
+  - **Shared-source behavior**: Card Mode shows only the group root's input/upload, with a **Source partagée (n)** badge. Editing or removing that source updates every linked image everywhere (preview, PNG, and PDF). A per-field script `src` override is ignored for linked images so the group cannot diverge. If a root is decorative (`editableInCard: false`) but any linked member is editable, the source still gets one editor.
 
 ---
 
@@ -310,6 +312,7 @@ src/
 ├── utils/
 │   ├── cardRenderer.ts        # Detached Konva renderer for PNG/PDF exports
 │   ├── FontLoader.ts          # Dynamic Google Fonts loader
+│   ├── imageLinks.ts          # Shared-source resolution for linked image fields
 │   ├── imageLoader.ts         # Shared image load / convert / compress helpers
 │   ├── pdfExporter.ts         # A4/Letter multi-card print layout & crop marks (jsPDF)
 │   ├── richTextLayout.ts      # Word-wrap & alignment for styled rich-text runs

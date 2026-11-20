@@ -62,6 +62,17 @@ import { useUndoableDocument } from './hooks/useUndoableDocument';
 import { BUILT_IN_TEMPLATES, EMPTY_PACK } from './data';
 import { STRINGS } from './i18n/strings';
 import { clampNumber } from './utils/numbers';
+import {
+  getImageLinkDescendants,
+  getImageLinkGroups,
+  getImageLinkRootId,
+  getLinkedImageIds,
+  getSharedImageSource,
+  isImageLinkRoot,
+  isImageSourceEditableInCard,
+  resolveImageLinkRoot,
+  wouldCreateImageLinkCycle,
+} from './utils/imageLinks';
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MIN_ZOOM = 0.25;
@@ -196,16 +207,59 @@ export default function App() {
   }, [currentStyleKey, pack.styles]);
   const resolvedStyle = styleResolution.style;
 
-  // Template mode previews the template's defaults, not the active card's data.
-  const previewCardValues = useMemo(
+  const imageLinkGroups = useMemo(
+    () => getImageLinkGroups(resolvedStyle.fields),
+    [resolvedStyle.fields],
+  );
+  const linkedImageIds = useMemo(
+    () => getLinkedImageIds(resolvedStyle.fields),
+    [resolvedStyle.fields],
+  );
+
+  // Linked images expose one source editor on their root field. An editable
+  // child keeps that editor visible even when the root is decorative.
+  const cardFormFields = useMemo(
     () =>
+      resolvedStyle.fields.filter((field) => {
+        if (field.type !== 'image') return field.editableInCard !== false;
+        if (!isImageLinkRoot(field, resolvedStyle.fields)) return false;
+        return isImageSourceEditableInCard(field, resolvedStyle.fields);
+      }),
+    [resolvedStyle.fields],
+  );
+
+  // Template mode previews the template's defaults, not the active card's data.
+  // Linked images always read the source stored on their root field.
+  const previewCardValues = useMemo(() => {
+    const baseValues: Record<string, string> =
       mode === 'template'
         ? Object.fromEntries(
             resolvedStyle.fields.map((field) => [field.id, field.defaultValue ?? '']),
           )
-        : (activeCard?.values ?? {}),
-    [mode, resolvedStyle.fields, activeCard],
-  );
+        : Object.fromEntries(
+            resolvedStyle.fields.map((field) => {
+              const editable =
+                field.type === 'image'
+                  ? isImageSourceEditableInCard(field, resolvedStyle.fields)
+                  : field.editableInCard !== false;
+              return [
+                field.id,
+                editable
+                  ? (activeCard?.values[field.id] ?? field.defaultValue ?? '')
+                  : (field.defaultValue ?? ''),
+              ];
+            }),
+          );
+
+    return Object.fromEntries(
+      resolvedStyle.fields.map((field) => [
+        field.id,
+        field.type === 'image'
+          ? getSharedImageSource(field, resolvedStyle.fields, baseValues)
+          : (baseValues[field.id] ?? ''),
+      ]),
+    );
+  }, [mode, resolvedStyle.fields, activeCard]);
   const bannerMessage =
     errorBanner ?? (dismissedStyleError === styleResolution.error ? null : styleResolution.error);
 
@@ -284,6 +338,22 @@ export default function App() {
 
   const rawActiveStyle = pack.styles.find((s) => s.key === currentStyleKey) || pack.styles[0];
   const selectedField = resolvedStyle.fields.find((f) => f.id === selectedFieldId) || null;
+  const selectedImageSource =
+    selectedField?.type === 'image'
+      ? resolveImageLinkRoot(selectedField, resolvedStyle.fields)
+      : null;
+  const selectedImageGroup = selectedImageSource
+    ? imageLinkGroups.find((group) => group.root.id === selectedImageSource.id)
+    : undefined;
+  const imageLinkCandidates =
+    selectedField?.type === 'image'
+      ? resolvedStyle.fields.filter(
+          (field) =>
+            field.type === 'image' &&
+            field.id !== selectedField.id &&
+            !wouldCreateImageLinkCycle(selectedField.id, field.id, resolvedStyle.fields),
+        )
+      : [];
   const selectedFieldIdKey = selectedField?.id ?? '';
   // Draft is scoped to the selected field, so switching layers never leaks text.
   const fieldIdDraft =
@@ -326,7 +396,7 @@ export default function App() {
     });
   }, []);
 
-  const selectedFieldScriptError = useMemo(() => {
+  const selectedFieldScriptError = (() => {
     if (!selectedField?.script) return null;
     const res = evaluateFieldScript(selectedField.script, {
       card: activeCard?.values || {},
@@ -334,7 +404,7 @@ export default function App() {
       field: selectedField as unknown as Record<string, unknown>,
     });
     return res.error || null;
-  }, [selectedField, activeCard, resolvedStyle]);
+  })();
   const visibleScriptError = selectedField
     ? (scriptErrors[selectedField.id] ?? selectedFieldScriptError)
     : null;
@@ -425,6 +495,69 @@ export default function App() {
     );
   };
 
+  /** Link an image's source to another image; an empty target removes the link. */
+  const setImageLink = (fieldId: string, targetId: string) => {
+    const field = resolvedStyle.fields.find((item) => item.id === fieldId);
+    if (!field || field.type !== 'image') return;
+
+    if (!targetId) {
+      if (!field.linkedTo) return;
+      const sharedDefault = getSharedImageSource(
+        field,
+        resolvedStyle.fields,
+        Object.fromEntries(resolvedStyle.fields.map((item) => [item.id, item.defaultValue ?? ''])),
+      );
+      const nextCards = cards.map((card) => ({
+        ...card,
+        values: {
+          ...card.values,
+          [fieldId]: getSharedImageSource(field, resolvedStyle.fields, card.values),
+        },
+      }));
+      setDocument({
+        ...snapshot(),
+        pack: applyFieldUpdates(pack, currentStyleKey, resolvedStyle.fields, fieldId, {
+          linkedTo: '',
+          defaultValue: sharedDefault,
+        }),
+        cards: nextCards,
+      });
+      return;
+    }
+
+    const target = resolvedStyle.fields.find((item) => item.id === targetId);
+    if (!target || target.type !== 'image') return;
+    if (wouldCreateImageLinkCycle(fieldId, targetId, resolvedStyle.fields)) {
+      showError('Cette image est déjà liée à la cible choisie.');
+      return;
+    }
+
+    const rootId = getImageLinkRootId(targetId, resolvedStyle.fields);
+    // If the linked field was itself a root, its children follow it to the new root.
+    const movedFieldIds = [
+      fieldId,
+      ...getImageLinkDescendants(fieldId, resolvedStyle.fields).map((item) => item.id),
+    ];
+
+    const nextCards = cards.map((card) => {
+      const values = { ...card.values };
+      for (const movedId of movedFieldIds) {
+        if (values[rootId] === undefined && values[movedId]) values[rootId] = values[movedId];
+        delete values[movedId];
+      }
+      return { ...card, values };
+    });
+    setDocument({
+      ...snapshot(),
+      pack: applyFieldUpdates(pack, currentStyleKey, resolvedStyle.fields, fieldId, {
+        linkedTo: rootId,
+        // The stored source now lives on the root; clear the stale local image.
+        defaultValue: '',
+      }),
+      cards: nextCards,
+    });
+  };
+
   const addTemplateField = (type: FieldType) => {
     const newId = `field_${Date.now()}`;
     const baseLabels: Record<FieldType, string> = {
@@ -471,16 +604,55 @@ export default function App() {
   };
 
   const deleteOrRevertField = (fieldId: string) => {
+    const deletedField = resolvedStyle.fields.find((field) => field.id === fieldId);
+    const affectedLinks =
+      deletedField?.type === 'image' ? getImageLinkDescendants(fieldId, resolvedStyle.fields) : [];
+    const templateDefaults = Object.fromEntries(
+      resolvedStyle.fields.map((field) => [field.id, field.defaultValue ?? '']),
+    );
+
+    let nextPack = pack;
+    for (const affectedField of affectedLinks) {
+      nextPack = applyFieldUpdates(
+        nextPack,
+        currentStyleKey,
+        resolvedStyle.fields,
+        affectedField.id,
+        {
+          linkedTo: '',
+          defaultValue: getSharedImageSource(affectedField, resolvedStyle.fields, templateDefaults),
+        },
+      );
+    }
+    nextPack = {
+      ...nextPack,
+      styles: nextPack.styles.map((style) =>
+        style.key === currentStyleKey
+          ? { ...style, fields: style.fields.filter((field) => field.id !== fieldId) }
+          : style,
+      ),
+    };
+
+    const nextCards =
+      deletedField?.type === 'image'
+        ? cards.map((card) => {
+            const values = { ...card.values };
+            for (const affectedField of affectedLinks) {
+              values[affectedField.id] = getSharedImageSource(
+                affectedField,
+                resolvedStyle.fields,
+                card.values,
+              );
+            }
+            delete values[fieldId];
+            return { ...card, values };
+          })
+        : cards;
+
     setDocument({
       ...snapshot(),
-      pack: {
-        ...pack,
-        styles: pack.styles.map((s) =>
-          s.key === currentStyleKey
-            ? { ...s, fields: s.fields.filter((f) => f.id !== fieldId) }
-            : s,
-        ),
-      },
+      pack: nextPack,
+      cards: nextCards,
       selectedFieldId: selectedFieldId === fieldId ? null : selectedFieldId,
     });
   };
@@ -647,10 +819,11 @@ export default function App() {
   const handleCardImageUpload = (field: TemplateField, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeCard) return;
-    requestImageCrop(file, field.width / Math.max(1, field.height), {
+    const sourceField = resolveImageLinkRoot(field, resolvedStyle.fields);
+    requestImageCrop(file, sourceField.width / Math.max(1, sourceField.height), {
       kind: 'card',
       id: activeCard.id,
-      fieldId: field.id,
+      fieldId: sourceField.id,
     });
     e.target.value = '';
   };
@@ -735,9 +908,11 @@ export default function App() {
         ...pack,
         styles: pack.styles.map((style) => ({
           ...style,
-          fields: style.fields.map((field) =>
-            field.id === oldId ? { ...field, id: newId } : field,
-          ),
+          fields: style.fields.map((field) => {
+            if (field.id === oldId) return { ...field, id: newId };
+            if (field.linkedTo === oldId) return { ...field, linkedTo: newId };
+            return field;
+          }),
         })),
       },
       cards: cards.map((card) => {
@@ -1357,32 +1532,16 @@ export default function App() {
                     )
                     .map(({ field }) => {
                       const isTemplateMode = mode === 'template';
-                      const isCardEditable = field.editableInCard !== false;
-                      const cardRawValue = isCardEditable
-                        ? (activeCard?.values[field.id] ?? field.defaultValue ?? '')
-                        : (field.defaultValue ?? '');
                       return (
                         <DraggableFieldNode
                           key={field.id}
                           field={field}
-                          rawValue={
-                            isTemplateMode
-                              ? (previewCardValues[field.id] ?? field.defaultValue ?? '')
-                              : cardRawValue
-                          }
-                          allCardValues={
-                            isTemplateMode
-                              ? previewCardValues
-                              : isCardEditable
-                                ? (activeCard?.values ?? {})
-                                : {
-                                    ...(activeCard?.values ?? {}),
-                                    [field.id]: field.defaultValue ?? '',
-                                  }
-                          }
+                          rawValue={previewCardValues[field.id] ?? field.defaultValue ?? ''}
+                          allCardValues={previewCardValues}
                           resolvedStyle={resolvedStyle}
                           isDesignMode={isTemplateMode}
                           isSelected={selectedFieldId === field.id}
+                          imageSourceLocked={field.type === 'image' && linkedImageIds.has(field.id)}
                           onSelect={() => setUi({ selectedFieldId: field.id })}
                           onChange={(updates) => updateFieldProps(field.id, updates)}
                           onScriptError={handleScriptError}
@@ -1441,97 +1600,110 @@ export default function App() {
             <>
               <h3 style={{ marginTop: 0 }}>Contenu de la Carte</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {resolvedStyle.fields
-                  .filter((f) => f.type !== 'box' && f.editableInCard !== false)
-                  .map((field) => {
-                    const currentVal = activeCard?.values[field.id] ?? field.defaultValue ?? '';
-                    const fieldInputId = `card-field-${field.id}`;
-                    return (
-                      <div
-                        key={field.id}
-                        style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
-                      >
-                        <label
-                          htmlFor={fieldInputId}
-                          style={{ fontSize: '13px', color: '#94a3b8' }}
+                {cardFormFields.map((field) => {
+                  const sourceField =
+                    field.type === 'image'
+                      ? resolveImageLinkRoot(field, resolvedStyle.fields)
+                      : field;
+                  const currentVal =
+                    field.type === 'image'
+                      ? (previewCardValues[field.id] ?? '')
+                      : (activeCard?.values[field.id] ?? field.defaultValue ?? '');
+                  const sharedCount =
+                    field.type === 'image'
+                      ? (imageLinkGroups.find((group) => group.root.id === sourceField.id)?.members
+                          .length ?? 1)
+                      : 1;
+                  const fieldInputId = `card-field-${field.id}`;
+                  return (
+                    <div
+                      key={field.id}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
+                    >
+                      <label htmlFor={fieldInputId} style={{ fontSize: '13px', color: '#94a3b8' }}>
+                        {field.label}
+                        {field.type === 'image' && sharedCount > 1 && (
+                          <span style={{ color: '#f59e0b' }}>
+                            {' '}
+                            — {STRINGS.sharedImageSource} ({sharedCount})
+                          </span>
+                        )}
+                      </label>
+
+                      {field.type === 'text' && (
+                        <textarea
+                          id={fieldInputId}
+                          rows={field.height > 60 ? 4 : 1}
+                          value={currentVal}
+                          onChange={(e) => updateCardValue(field.id, e.target.value)}
+                          style={inputStyle}
+                        />
+                      )}
+
+                      {field.type === 'richtext' && (
+                        <RichTextEditor
+                          value={currentVal}
+                          onChange={(html) => updateCardValue(field.id, html)}
+                        />
+                      )}
+
+                      {field.type === 'select' && (
+                        <select
+                          id={fieldInputId}
+                          value={currentVal}
+                          onChange={(e) => updateCardValue(field.id, e.target.value)}
+                          style={inputStyle}
                         >
-                          {field.label}
-                        </label>
+                          {(field.options || []).map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
 
-                        {field.type === 'text' && (
-                          <textarea
-                            id={fieldInputId}
-                            rows={field.height > 60 ? 4 : 1}
-                            value={currentVal}
-                            onChange={(e) => updateCardValue(field.id, e.target.value)}
-                            style={inputStyle}
-                          />
-                        )}
-
-                        {field.type === 'richtext' && (
-                          <RichTextEditor
-                            value={currentVal}
-                            onChange={(html) => updateCardValue(field.id, html)}
-                          />
-                        )}
-
-                        {field.type === 'select' && (
-                          <select
-                            id={fieldInputId}
-                            value={currentVal}
-                            onChange={(e) => updateCardValue(field.id, e.target.value)}
-                            style={inputStyle}
+                      {field.type === 'image' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <label
+                            style={{
+                              ...toolBtnStyle,
+                              justifyContent: 'center',
+                              background: '#334155',
+                            }}
                           >
-                            {(field.options || []).map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-
-                        {field.type === 'image' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label
+                            <Upload size={14} /> Choisir une image locale
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleCardImageUpload(field, e)}
+                              style={{ display: 'none' }}
+                            />
+                          </label>
+                          <input
+                            id={fieldInputId}
+                            type="text"
+                            placeholder="Ou coller une URL d'image (https://...)"
+                            value={currentVal.startsWith('data:') ? '' : currentVal}
+                            onChange={(e) => updateCardValue(sourceField.id, e.target.value)}
+                            style={inputStyle}
+                          />
+                          {currentVal && (
+                            <button
+                              onClick={() => updateCardValue(sourceField.id, '')}
                               style={{
-                                ...toolBtnStyle,
-                                justifyContent: 'center',
-                                background: '#334155',
+                                ...smallBtnStyle,
+                                background: '#7f1d1d',
+                                color: '#fecaca',
                               }}
                             >
-                              <Upload size={14} /> Choisir une image locale
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => handleCardImageUpload(field, e)}
-                                style={{ display: 'none' }}
-                              />
-                            </label>
-                            <input
-                              id={fieldInputId}
-                              type="text"
-                              placeholder="Ou coller une URL d'image (https://...)"
-                              value={currentVal.startsWith('data:') ? '' : currentVal}
-                              onChange={(e) => updateCardValue(field.id, e.target.value)}
-                              style={inputStyle}
-                            />
-                            {currentVal && (
-                              <button
-                                onClick={() => updateCardValue(field.id, '')}
-                                style={{
-                                  ...smallBtnStyle,
-                                  background: '#7f1d1d',
-                                  color: '#fecaca',
-                                }}
-                              >
-                                Retirer l'image
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                              Retirer l'image
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           ) : (
@@ -2161,9 +2333,35 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Image Opacity & Default URL */}
-                  {selectedField.type === 'image' && (
+                  {/* Image Link, Opacity & Default URL */}
+                  {selectedField.type === 'image' && selectedImageSource && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {mode === 'template' && (
+                        <div>
+                          <label htmlFor="image-link-select" style={labelStyle}>
+                            {STRINGS.imageLink}
+                          </label>
+                          <select
+                            id="image-link-select"
+                            value={selectedField.linkedTo ?? ''}
+                            onChange={(e) => setImageLink(selectedField.id, e.target.value)}
+                            style={inputStyle}
+                          >
+                            <option value="">{STRINGS.noImageLink}</option>
+                            {imageLinkCandidates.map((field) => (
+                              <option key={field.id} value={field.id}>
+                                {field.label} ({field.id})
+                              </option>
+                            ))}
+                          </select>
+                          {selectedImageGroup && selectedImageGroup.members.length > 1 && (
+                            <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px' }}>
+                              {STRINGS.sharedImageSource} — {selectedImageGroup.members.length}{' '}
+                              images
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {selectedField.editableInCard === false && (
                         <label
                           style={{
@@ -2181,8 +2379,8 @@ export default function App() {
                               if (!file) return;
                               requestImageCrop(
                                 file,
-                                selectedField.width / Math.max(1, selectedField.height),
-                                { kind: 'field', id: selectedField.id },
+                                selectedImageSource.width / Math.max(1, selectedImageSource.height),
+                                { kind: 'field', id: selectedImageSource.id },
                               );
                               e.target.value = '';
                             }}
@@ -2208,26 +2406,32 @@ export default function App() {
                       </div>
                       <div>
                         <label style={labelStyle}>
-                          {selectedField.editableInCard === false
-                            ? 'Image (URL / Template)'
-                            : 'Image par défaut (URL)'}
+                          {selectedImageSource.id !== selectedField.id
+                            ? `${STRINGS.sharedImageSource} (${selectedImageSource.label})`
+                            : selectedField.editableInCard === false
+                              ? 'Image (URL / Template)'
+                              : 'Image par défaut (URL)'}
                         </label>
                         <input
                           type="text"
                           placeholder="https://..."
                           value={
-                            selectedField.defaultValue?.startsWith('data:')
+                            selectedImageSource.defaultValue?.startsWith('data:')
                               ? ''
-                              : selectedField.defaultValue || ''
+                              : selectedImageSource.defaultValue || ''
                           }
                           onChange={(e) =>
-                            updateFieldProps(selectedField.id, { defaultValue: e.target.value })
+                            updateFieldProps(selectedImageSource.id, {
+                              defaultValue: e.target.value,
+                            })
                           }
                           style={inputStyle}
                         />
-                        {selectedField.editableInCard === false && selectedField.defaultValue && (
+                        {selectedImageSource.defaultValue && (
                           <button
-                            onClick={() => updateFieldProps(selectedField.id, { defaultValue: '' })}
+                            onClick={() =>
+                              updateFieldProps(selectedImageSource.id, { defaultValue: '' })
+                            }
                             style={{
                               ...smallBtnStyle,
                               background: '#7f1d1d',

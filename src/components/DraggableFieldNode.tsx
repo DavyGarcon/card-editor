@@ -16,6 +16,8 @@ interface DraggableNodeProps {
   onSelect: () => void;
   onChange: (updated: Partial<TemplateField>) => void;
   onScriptError?: (fieldId: string, error: string | null) => void;
+  /** Linked images use their shared stored source; script src overrides are ignored. */
+  imageSourceLocked?: boolean;
 }
 
 export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
@@ -28,6 +30,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
   onSelect,
   onChange,
   onScriptError,
+  imageSourceLocked = false,
 }) => {
   const shapeRef = useRef<any>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -74,8 +77,12 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
     displayText = computed.text;
   }
 
-  // Image loading for image fields
-  const imageSrc = computed.src ?? rawValue ?? field.defaultValue ?? '';
+  // Image loading for image fields. Linked images must keep one source, so a
+  // per-field script cannot override `src` for a member of a link group.
+  const imageSrc =
+    imageSourceLocked && field.type === 'image'
+      ? (rawValue ?? field.defaultValue ?? '')
+      : (computed.src ?? rawValue ?? field.defaultValue ?? '');
   // Pending, failed or timed-out loads show the placeholder instead of a stale image.
   const loadedImg = useImage(field.type === 'image' ? imageSrc : undefined);
 

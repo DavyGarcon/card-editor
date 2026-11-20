@@ -119,6 +119,14 @@ function validateField(input: unknown, path: string): TemplateField {
     const defaultValue = requireShortString(input.defaultValue, `${path}.defaultValue`, limit);
     field.defaultValue = field.type === 'richtext' ? sanitizeRichText(defaultValue) : defaultValue;
   }
+  if (input.linkedTo !== undefined) {
+    if (field.type !== 'image') {
+      throw new Error(`${path}.linkedTo ne s'applique qu'aux images.`);
+    }
+    // An empty string is the JSON-safe "no link" override: it can replace an
+    // inherited link, which an omitted/undefined property cannot do.
+    field.linkedTo = requireShortString(input.linkedTo, `${path}.linkedTo`, MAX_ID_LENGTH);
+  }
   for (const key of ['color', 'fill', 'align', 'fontFamily'] as const) {
     if (input[key] !== undefined) {
       (field as unknown as Record<string, unknown>)[key] = optionalString(
@@ -181,6 +189,34 @@ function validateStyle(input: unknown, path: string): CardStyleDefinition {
   return style;
 }
 
+/** Linked images must target another image in the same resolved style. */
+function validateImageLinks(fields: TemplateField[], path: string): void {
+  const byId = new Map(fields.map((field) => [field.id, field]));
+  for (const field of fields) {
+    if (!field.linkedTo) continue;
+    if (field.type !== 'image') {
+      throw new Error(`${path}.${field.id}.linkedTo ne s'applique qu'aux images.`);
+    }
+    const target = byId.get(field.linkedTo);
+    if (!target || target.type !== 'image') {
+      throw new Error(
+        `${path}.${field.id}.linkedTo référence une image inexistante : "${field.linkedTo}".`,
+      );
+    }
+
+    const seen = new Set<string>();
+    let current: TemplateField | undefined = field;
+    while (current?.linkedTo) {
+      if (seen.has(current.id)) {
+        throw new Error(`${path} contient une boucle de liens d'images sur "${current.id}".`);
+      }
+      seen.add(current.id);
+      current = byId.get(current.linkedTo);
+      if (!current || current.type !== 'image') break;
+    }
+  }
+}
+
 /** Validates and normalizes an imported template pack, throwing on bad input. */
 export function validateTemplatePack(input: unknown): CardTemplatePack {
   if (!isObject(input)) throw new Error('Le fichier doit contenir un objet JSON.');
@@ -205,7 +241,10 @@ export function validateTemplatePack(input: unknown): CardTemplatePack {
     if (style.basedOn && !seen.has(style.basedOn)) {
       throw new Error(`Le style "${style.key}" hérite d'un style inexistant : "${style.basedOn}".`);
     }
-    resolveCardStyle(style.key, pack.styles); // throws on inheritance cycles
+    // Throws on inheritance cycles; resolved fields also include inherited
+    // images, which may be link targets.
+    const resolved = resolveCardStyle(style.key, pack.styles);
+    validateImageLinks(resolved.fields, `styles[${style.key}]`);
   }
 
   if (input.activeStyleKey !== undefined) {
