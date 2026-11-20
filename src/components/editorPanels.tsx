@@ -171,7 +171,8 @@ export function ScriptHelpPanel({ open, onToggle }: { open: boolean; onToggle: (
           <br />
           Retournez un objet avec <code>text</code>, <code>color</code>, <code>visible</code>,{' '}
           <code>src</code>, <code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>,{' '}
-          <code>fontSize</code>, <code>opacity</code>.<br />
+          <code>fontSize</code>, <code>opacity</code>, <code>rotation</code>, <code>flipX</code>,{' '}
+          <code>flipY</code>.<br />
           Supporte <code>const</code>/<code>let</code>, <code>if</code>/<code>else</code>,{' '}
           <code>return</code>, les littéraux de gabarit et les helpers <code>Math</code> /{' '}
           <code>String</code>.<br />
