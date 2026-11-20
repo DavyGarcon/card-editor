@@ -30,6 +30,7 @@ import {
   Image as ImageIcon,
   GitBranch,
   Copy,
+  Settings2,
 } from 'lucide-react';
 import {
   CardStyleDefinition,
@@ -1027,6 +1028,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undo, redo, saveTemplate, saveDeck, mode, selectedFieldId, resolvedStyle.fields]);
 
+  const exportPdfLabel = isExportingPdf
+    ? 'Génération PDF en cours'
+    : `Planche PDF (${cards.length} cartes)`;
+
   return (
     <div className="app-shell">
       {/* LEFT: Deck & Style Selector */}
@@ -1180,47 +1185,70 @@ export default function App() {
           )}
         </div>
 
+        {/* The only two save/load notions: template pack (template mode), card deck (card mode). */}
+        {mode === 'template' && <TemplateIOControls onSave={saveTemplate} onLoad={loadTemplate} />}
+
         {/* Card mode: deck management is hidden while editing the template. */}
         {mode === 'card' && (
           <>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button
-                onClick={addNewCard}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  padding: '8px',
-                  background: '#334155',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  flex: 1,
-                }}
-              >
-                <Plus size={16} /> Ajouter une Carte
-              </button>
-              <button
-                onClick={duplicateCard}
-                disabled={!activeCard}
-                title={STRINGS.duplicateCard}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  padding: '8px',
-                  background: '#334155',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                }}
-              >
-                <Copy size={16} /> Dupliquer
-              </button>
+            <div className="io-group" role="group" aria-label="Rendu des cartes">
+              <span className="io-group-label">Rendu</span>
+              <div className="io-group-actions">
+                <button
+                  onClick={handleExportDeckPdf}
+                  disabled={isExportingPdf}
+                  style={{
+                    ...toolBtnStyle,
+                    background: isExportingPdf ? '#475569' : '#6366f1',
+                    fontWeight: 'bold',
+                  }}
+                  aria-label={exportPdfLabel}
+                  title={exportPdfLabel}
+                >
+                  <Printer size={16} />
+                </button>
+                <button
+                  onClick={() => setShowPdfOptions(true)}
+                  style={toolBtnStyle}
+                  title={STRINGS.pdfOptions}
+                  aria-label={STRINGS.pdfOptions}
+                >
+                  <Settings2 size={16} />
+                </button>
+                <button
+                  onClick={exportPNG}
+                  style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
+                  aria-label="Exporter la carte en PNG"
+                  title="Exporter la carte en PNG"
+                >
+                  <Download size={16} />
+                </button>
+              </div>
+            </div>
+
+            <DeckIOControls cardCount={cards.length} onSave={saveDeck} onLoad={loadDeck} />
+
+            <div className="io-group" role="group" aria-label="Card">
+              <span className="io-group-label">Card</span>
+              <div className="io-group-actions">
+                <button
+                  onClick={addNewCard}
+                  aria-label="Ajouter une Carte"
+                  title="Ajouter une Carte"
+                  style={toolBtnStyle}
+                >
+                  <Plus size={16} />
+                </button>
+                <button
+                  onClick={duplicateCard}
+                  disabled={!activeCard}
+                  aria-label={STRINGS.duplicateCard}
+                  title={STRINGS.duplicateCard}
+                  style={toolBtnStyle}
+                >
+                  <Copy size={16} />
+                </button>
+              </div>
             </div>
 
             <div
@@ -1396,45 +1424,8 @@ export default function App() {
           </div>
         </ErrorBoundary>
 
-        {/* Bottom toolbar: only the controls for the active mode. */}
+        {/* Bottom toolbar: only the reset action remains; deck I/O and exports are above "Ajouter une Carte". */}
         <div className="io-toolbar">
-          {mode === 'card' ? (
-            <>
-              <div className="io-group" role="group" aria-label="Rendu des cartes">
-                <span className="io-group-label">Rendu</span>
-                <button
-                  onClick={handleExportDeckPdf}
-                  disabled={isExportingPdf}
-                  style={{
-                    ...toolBtnStyle,
-                    background: isExportingPdf ? '#475569' : '#6366f1',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  <Printer size={16} />
-                  {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
-                </button>
-                <button
-                  onClick={() => setShowPdfOptions(true)}
-                  style={toolBtnStyle}
-                  title={STRINGS.pdfOptions}
-                  aria-label={STRINGS.pdfOptions}
-                >
-                  {STRINGS.pdfOptions}
-                </button>
-                <button
-                  onClick={exportPNG}
-                  style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
-                >
-                  <Download size={16} /> Carte PNG
-                </button>
-              </div>
-              <DeckIOControls cardCount={cards.length} onSave={saveDeck} onLoad={loadDeck} />
-            </>
-          ) : (
-            <TemplateIOControls onSave={saveTemplate} onLoad={loadTemplate} />
-          )}
-
           <button
             onClick={resetWorkspace}
             className="io-button"
@@ -1446,7 +1437,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* LEFT: Context-Aware Inspector (below deck & styles) */}
+      {/* RIGHT: Context-Aware Inspector (card content / template fields), beside the preview */}
       <div className="sidebar-right">
         <ErrorBoundary
           fallbackTitle="Erreur dans l'inspecteur"

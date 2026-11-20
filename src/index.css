@@ -32,11 +32,12 @@
   padding: 5px 8px;
 }
 
-/* Details on the left (stacked), card/template preview on the right. */
+/* Deck/style controls on the left, preview in the middle, all card/template
+   details on the right of the preview (in both modes). */
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
-  grid-template-rows: minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(300px, 380px);
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   font-family: system-ui, sans-serif;
   background: var(--color-bg);
@@ -47,7 +48,6 @@
   grid-column: 1;
   grid-row: 1;
   min-height: 0;
-  max-height: 45vh;
   border-right: 1px solid var(--color-surface);
   padding: 16px;
   display: flex;
@@ -56,19 +56,9 @@
   overflow-y: auto;
 }
 
-.sidebar-right {
-  grid-column: 1;
-  grid-row: 2;
-  min-height: 0;
-  border-right: 1px solid var(--color-surface);
-  border-top: 1px solid var(--color-surface);
-  padding: 16px 20px;
-  overflow-y: auto;
-}
-
 .stage-area {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -81,10 +71,19 @@
   padding: 16px;
 }
 
-/* Keep the preview to the right of the details, even on smaller laptops. */
+.sidebar-right {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 0;
+  border-left: 1px solid var(--color-surface);
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+/* Keep all three columns usable on smaller laptops. */
 @media (max-width: 1200px) {
   .app-shell {
-    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(260px, 300px);
   }
 }
 
@@ -147,6 +146,14 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
+}
+
+/* Keep the group label on the left and push its action buttons to the right. */
+.io-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .io-button,

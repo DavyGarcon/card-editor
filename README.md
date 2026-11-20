@@ -15,14 +15,14 @@
 - **Dynamic JavaScript Render Scripts**: Attach custom JS logic to any layer (`script`) to dynamically alter text, colors, positions, or conditional visibility (`visible`) based on the card's current field values. Supports `const`/`let`, assignment, `if`/`else`, blocks and `return`; syntax/runtime errors report a 1-based line number, and each evaluation has a step budget. An inline script help panel lists the available variables and overrides.
 - **Custom Artwork Support**: Upload local images or link external image URLs with adjustable opacity and bounding frames. Uploads open an interactive cropper with a configurable export resolution; artwork is compressed and stored as Blobs in IndexedDB (saved files keep short `idb:` refs). Legacy Data URLs are still supported, and object URLs are cleaned up when images are deleted or pruned. Inspector colors use a palette picker, and layers can use dynamically loaded Google Fonts.
 - **History**: Undo/redo (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`) covers 50 **full-session** snapshots, including the active style, card, layer selection, and mode. `Réinitialiser` returns to the built-in template with an empty deck and clears history so old sessions cannot be undone.
-- **Separate Portable Files**: The template pack saves to `*-template.json` and the deck saves to `*-deck.json`, each with its own load button group. All imports are validated and rich-text HTML is sanitized before rendering. `Ctrl/Cmd+S` saves the deck in Card mode and the template in Template mode.
+- **Separate Portable Files**: The only save/load notions are the template pack (`*-template.json`) and the card deck (`*-deck.json`). The template pack controls sit above the built-in template list; the deck controls stay with the deck. All imports are validated and rich-text HTML is sanitized before rendering. `Ctrl/Cmd+S` saves the deck in Card mode and the template in Template mode.
 - **Print-Ready Exports**:
   - **Single Card PNG**: High-DPI (`2x`) transparent/crisp PNG export of the active card.
   - **Multi-Card PDF Print Sheet**: Automatically arranges your entire deck onto A4 or Letter pages (`300 DPI`) with proportional real-world millimeter sizing and corner crop marks. A dialog lets you choose paper size, card width, gutter and crop marks; invalid or empty decks are rejected before layout.
   - **Portable JSON Files**: Save, share, and reload template packs and decks independently.
   - Exports render from a detached Konva stage, so the live editor is never mutated and jsPDF is loaded on demand.
-- **Mode-Focused Workspace**: Card Mode shows only deck management, card content fields, and card PNG/PDF + deck file controls. Template Mode shows only style/layer editing and template file controls. The template preview uses field defaults instead of a specific card's values.
-- **Responsive Layout**: Deck/style controls and the inspector sit in a left column with the card/template preview on the right; on phones the preview is shown first and the detail forms follow.
+- **Mode-Focused Workspace**: Card Mode shows only deck management, card content fields, and card PNG/PDF + deck file controls; the export buttons sit above **Ajouter une Carte**. Template Mode shows only style/layer editing and template file controls. The template preview uses field defaults instead of a specific card's values.
+- **Responsive Layout**: Deck/style controls sit on the left, the card/template preview is in the middle, and all card/template details are on the right of the preview in both modes. On phones the preview is shown first and the controls/details follow.
 - **Resilient Error Handling**: Granular React Error Boundaries isolate the canvas, inspector, and root UI, with a real recovery action that repairs the document and remounts the failed subtree. `try/catch` guards protect JSON imports, script execution, and file exports; invalid files show a dismissible banner.
 - **Preview Zoom & Accessible Layers**: Zoom in/out in 10% steps or fit-to-view (`Ctrl/Cmd` + wheel also zooms). The layer tree is a keyboard-accessible listbox: `Enter`/`Space` selects, `Alt+↑/↓` reorders, and arrow keys nudge the selected layer (hold `Shift` for 10px steps).
 - **Safe Imports**: Packs/decks are checked for duplicate card/field IDs, inheritance cycles, and bounded sizes (dimensions, counts, strings, script length). Scripts cannot set an image `src` to a cross-origin URL. Incompatible deck styles are remapped to the active style with a warning rather than silently dropping the deck.
@@ -176,7 +176,7 @@ Every item in `fields` defines both a **canvas layer** and a **card editor input
 
 ## Saving & Loading
 
-Templates and decks are intentionally separate — different files and different toolbar groups. Nothing is persisted automatically: on launch/refresh only the templates in `src/data` are available and the deck is empty.
+Templates and decks are intentionally the only two save/load notions — different files and different control groups. Template pack save/load buttons are placed above the list of built-in templates; deck save/load buttons stay with the deck. Nothing is persisted automatically: on launch/refresh only the templates in `src/data` are available and the deck is empty.
 
 | Content                        | Downloaded file             |
 | ------------------------------ | --------------------------- |

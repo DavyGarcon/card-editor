@@ -1,6 +1,6 @@
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 // Konva's node build requires the native `canvas` package, which is not needed
 // for these DOM-level integration checks.
@@ -58,10 +58,63 @@ describe('App integration', () => {
     // Alphabetically first template is the one loaded by default.
     expect(picker.value).toBe(picker.options[0].value);
 
+    expect(screen.queryByRole('group', { name: 'Sauvegarde du template' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Sauvegarde du deck' })).toBeInTheDocument();
+    const saveLoadGroups = screen
+      .getAllByRole('group')
+      .filter((group) => group.getAttribute('aria-label')?.startsWith('Sauvegarde'));
+    expect(saveLoadGroups).toHaveLength(1);
+
+    const deckGroup = screen.getByRole('group', { name: 'Sauvegarde du deck' });
+    expect(within(deckGroup).getByRole('button', { name: 'Sauvegarder le deck' }).textContent).toBe(
+      '',
+    );
+    expect(within(deckGroup).getByLabelText('Charger un deck').textContent).toBe('');
+
     expect(screen.getByText('Deck (0)')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Nom du Sort' })).toHaveValue('');
-    expect(screen.getByRole('button', { name: /Ajouter une Carte/i })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: /Rendu des cartes/i })).toBeInTheDocument();
+    const addCardButton = screen.getByRole('button', { name: /Ajouter une Carte/i });
+    const cardGroup = screen.getByRole('group', { name: 'Card' });
+    expect(within(cardGroup).getByText('Card')).toBeInTheDocument();
+    expect(within(cardGroup).getAllByRole('button')).toHaveLength(2);
+    expect(
+      within(cardGroup).getByRole('button', { name: /Ajouter une Carte/i }),
+    ).toBeInTheDocument();
+    const duplicateCardButton = within(cardGroup).getByRole('button', { name: /Dupliquer/i });
+    expect(duplicateCardButton).toBeInTheDocument();
+    const cardActionButtons = within(cardGroup).getAllByRole('button');
+    for (const button of cardActionButtons) {
+      expect(button.textContent).toBe('');
+      expect(button.getAttribute('aria-label')).toBeTruthy();
+      expect(button.querySelector('svg')).toHaveAttribute('width', '16');
+      expect(button.querySelector('svg')).toHaveAttribute('height', '16');
+    }
+    expect(addCardButton).toBe(
+      within(cardGroup).getByRole('button', { name: /Ajouter une Carte/i }),
+    );
+    const exportGroup = screen.getByRole('group', { name: /Rendu des cartes/i });
+    expect(
+      exportGroup.compareDocumentPosition(addCardButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      deckGroup.compareDocumentPosition(addCardButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const exportButtons = within(exportGroup).getAllByRole('button');
+    expect(exportButtons).toHaveLength(3);
+    for (const button of exportButtons) {
+      expect(button.textContent).toBe('');
+      expect(button.getAttribute('aria-label')).toBeTruthy();
+    }
+    // Export / save / load / card buttons sit in a right-aligned actions container.
+    for (const group of [deckGroup, exportGroup, cardGroup]) {
+      expect(group.querySelector('.io-group-actions')).not.toBeNull();
+    }
+
+    // Card actions use the same base style/size as the export buttons.
+    const pdfOptionsButton = within(exportGroup).getByRole('button', { name: 'Options PDF' });
+    for (const button of cardActionButtons) {
+      expect(button.getAttribute('style')).toBe(pdfOptionsButton.getAttribute('style'));
+    }
     expect(screen.queryByText(/Éditeur de Template/i)).not.toBeInTheDocument();
   });
 
@@ -84,9 +137,18 @@ describe('App integration', () => {
 
   it('shows template-only controls after switching mode', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Template/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
     expect(screen.getByText(/Éditeur de Template/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Ajouter une Carte/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Rendu des cartes/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Sauvegarde du deck' })).not.toBeInTheDocument();
+
+    const templateGroup = screen.getByRole('group', { name: 'Sauvegarde du template' });
+    expect(
+      within(templateGroup).getByRole('button', { name: 'Sauvegarder le template' }).textContent,
+    ).toBe('');
+    expect(within(templateGroup).getByLabelText('Charger un template').textContent).toBe('');
+    expect(templateGroup.querySelector('.io-group-actions')).not.toBeNull();
   });
 
   it('Ctrl+S saves the deck in card mode and the template in template mode', async () => {
@@ -95,7 +157,7 @@ describe('App integration', () => {
     await waitFor(() => expect(saveDeckFile).toHaveBeenCalledTimes(1));
     expect(saveTemplateFile).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /Template/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => expect(saveTemplateFile).toHaveBeenCalledTimes(1));
   });
