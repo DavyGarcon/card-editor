@@ -64,6 +64,14 @@ export async function renderCardToDataUrl(
       const fill = computed.fill ?? field.fill ?? '#0f172a';
       const fontSize = computed.fontSize ?? field.fontSize ?? 16;
       const opacity = computed.opacity ?? field.opacity ?? 1;
+      const rotation = computed.rotation ?? field.rotation ?? 0;
+      const flipX = computed.flipX ?? field.flipX ?? false;
+      const flipY = computed.flipY ?? field.flipY ?? false;
+      const transform = {
+        rotation,
+        scaleX: flipX ? -1 : 1,
+        scaleY: flipY ? -1 : 1,
+      };
 
       // rawValue already falls back to the default; `||` would resurrect a
       // default after the user intentionally cleared the field.
@@ -83,8 +91,9 @@ export async function renderCardToDataUrl(
             height,
             fill,
             stroke: color,
-            strokeWidth: 2,
+            strokeWidth: field.strokeWidth ?? 2,
             cornerRadius: 6,
+            ...transform,
             opacity,
           }),
         );
@@ -110,6 +119,7 @@ export async function renderCardToDataUrl(
             letterSpacing: field.letterSpacing,
             stroke: field.stroke,
             strokeWidth: field.strokeWidth,
+            ...transform,
           }),
         );
         continue;
@@ -126,7 +136,7 @@ export async function renderCardToDataUrl(
           verticalAlign: field.verticalAlign,
           letterSpacing: field.letterSpacing,
         });
-        const group = new Konva.Group({ x, y, width, height, opacity });
+        const group = new Konva.Group({ x, y, width, height, ...transform, opacity });
         for (const run of runs) {
           group.add(
             new Konva.Text({
@@ -158,7 +168,7 @@ export async function renderCardToDataUrl(
 
       if (field.type === 'image') {
         const src = computed.src ?? rawValue ?? '';
-        const group = new Konva.Group({ x, y, width, height, opacity });
+        const group = new Konva.Group({ x, y, width, height, ...transform, opacity });
         const placeholder = () => {
           group.add(
             new Konva.Rect({

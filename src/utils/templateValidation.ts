@@ -94,6 +94,14 @@ function validateField(input: unknown, path: string): TemplateField {
   if (input.strokeWidth !== undefined)
     field.strokeWidth = requireNumber(input.strokeWidth, `${path}.strokeWidth`, 0, 100);
   if (input.stroke !== undefined) field.stroke = optionalString(input.stroke, `${path}.stroke`);
+  if (input.rotation !== undefined)
+    field.rotation = requireNumber(input.rotation, `${path}.rotation`, -360, 360);
+  for (const key of ['flipX', 'flipY'] as const) {
+    if (input[key] !== undefined) {
+      if (typeof input[key] !== 'boolean') throw new Error(`${path}.${key} doit être un booléen.`);
+      field[key] = input[key];
+    }
+  }
   if (input.z !== undefined)
     field.z = requireNumber(input.z, `${path}.z`, -MAX_COORDINATE, MAX_COORDINATE);
   if (input.zOnly !== undefined) {

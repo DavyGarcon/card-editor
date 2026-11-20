@@ -204,6 +204,49 @@ describe('App integration', () => {
     expect(container.style.flexDirection).toBe('column');
   });
 
+  it('stacks the box contour color control below the fill control in template mode', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    fireEvent.click(screen.getByRole('button', { name: /Cadre/i }));
+
+    const fill = screen.getByText('Remplissage');
+    const contour = screen.getByText('Contour');
+    expect(fill.compareDocumentPosition(contour) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const container = fill.parentElement?.parentElement as HTMLElement;
+    expect(container.style.flexDirection).toBe('column');
+  });
+
+  it('rotates and mirrors a field in template mode', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
+    fireEvent.click(within(tree).getAllByRole('option')[0]);
+
+    const rotation = screen.getByRole('spinbutton', { name: 'Rotation (°)' });
+    expect(rotation).toHaveValue(0);
+    fireEvent.change(rotation, { target: { value: '45' } });
+    expect(rotation).toHaveValue(45);
+
+    const mirrorH = screen.getByRole('button', { name: 'Miroir horizontal' });
+    const mirrorV = screen.getByRole('button', { name: 'Miroir vertical' });
+    expect(mirrorH).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(mirrorH);
+    expect(mirrorH).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(mirrorV);
+    expect(mirrorV).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('edits the rectangle border width in template mode', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    fireEvent.click(screen.getByRole('button', { name: /Cadre/i }));
+
+    const borderWidth = screen.getByRole('spinbutton', { name: 'Épaisseur contour' });
+    expect(borderWidth).toHaveValue(2);
+    fireEvent.change(borderWidth, { target: { value: '8' } });
+    expect(borderWidth).toHaveValue(8);
+  });
+
   it('scales the whole card instead of clipping it when zoomed out', () => {
     render(<App />);
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Zoom (%)' }), {

@@ -9,7 +9,7 @@ export interface ColorPickerProps {
   onChange: (hexColor: string) => void;
   /** Preset palette swatches for quick tabletop/card styling */
   presets?: string[];
-  /** Allow clearing/resetting to transparent */
+  /** Allow clearing/resetting to transparent (enabled by default) */
   allowTransparent?: boolean;
 }
 
@@ -51,7 +51,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
   value,
   onChange,
   presets = DEFAULT_CARD_SWATCHES,
-  allowTransparent = false,
+  allowTransparent = true,
 }) => {
   // `draft` is only set while the user types; the prop stays the source of truth.
   const [draft, setDraft] = useState<string | null>(null);

@@ -28,6 +28,11 @@ export interface TemplateField {
   letterSpacing?: number;
   stroke?: string;
   strokeWidth?: number;
+  // Transform (applied to every field type)
+  /** Rotation in degrees around the field's top-left origin. */
+  rotation?: number;
+  flipX?: boolean;
+  flipY?: boolean;
   // Box styling
   fill?: string;
   // Select options

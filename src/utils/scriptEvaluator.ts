@@ -11,6 +11,9 @@ export interface ComputedFieldOverrides {
   height?: number;
   fontSize?: number;
   opacity?: number;
+  rotation?: number;
+  flipX?: boolean;
+  flipY?: boolean;
   src?: string;
   error?: string;
 }
@@ -26,6 +29,9 @@ const OVERRIDE_KEYS = new Set<keyof ComputedFieldOverrides>([
   'height',
   'fontSize',
   'opacity',
+  'rotation',
+  'flipX',
+  'flipY',
   'src',
 ]);
 
@@ -60,17 +66,22 @@ function sanitizeOverrides(value: unknown): ComputedFieldOverrides {
   const source = value as Record<string, unknown>;
   for (const key of OVERRIDE_KEYS) {
     const candidate = source[key as string];
-    if (key === 'visible' && typeof candidate === 'boolean') result.visible = candidate;
-    if (key === 'text' && typeof candidate === 'string') {
+    if (
+      (key === 'visible' || key === 'flipX' || key === 'flipY') &&
+      typeof candidate === 'boolean'
+    ) {
+      (result as Record<string, unknown>)[key] = candidate;
+    } else if (key === 'text' && typeof candidate === 'string') {
       result.text = candidate.slice(0, MAX_OVERRIDE_TEXT_LENGTH);
     } else if (key === 'color' || key === 'fill') {
       if (typeof candidate === 'string') (result as Record<string, unknown>)[key] = candidate;
     } else if (key === 'src') {
       if (typeof candidate === 'string' && isSafeImageSource(candidate)) result.src = candidate;
     } else if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-      const numberKey = key as 'x' | 'y' | 'width' | 'height' | 'fontSize' | 'opacity';
+      const numberKey = key as 'x' | 'y' | 'width' | 'height' | 'fontSize' | 'opacity' | 'rotation';
       let number = candidate;
       if (numberKey === 'opacity') number = Math.min(1, Math.max(0, number));
+      else if (numberKey === 'rotation') number = Math.min(360, Math.max(-360, number));
       else if (numberKey === 'fontSize' || numberKey === 'width' || numberKey === 'height') {
         number = Math.min(8192, Math.max(1, number));
       } else {

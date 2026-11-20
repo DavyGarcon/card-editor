@@ -1985,6 +1985,61 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto auto',
+                      gap: '8px',
+                      alignItems: 'end',
+                    }}
+                  >
+                    <div>
+                      <label htmlFor="field-rotation" style={labelStyle}>
+                        Rotation (°)
+                      </label>
+                      <input
+                        id="field-rotation"
+                        type="number"
+                        min={-360}
+                        max={360}
+                        value={selectedField.rotation ?? 0}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, {
+                            rotation: clampNumber(
+                              e.target.value,
+                              selectedField.rotation ?? 0,
+                              -360,
+                              360,
+                            ),
+                          })
+                        }
+                        style={inputStyle}
+                      />
+                    </div>
+                    <button
+                      onClick={() =>
+                        updateFieldProps(selectedField.id, { flipX: !selectedField.flipX })
+                      }
+                      style={smallBtnStyle}
+                      title="Miroir horizontal"
+                      aria-label="Miroir horizontal"
+                      aria-pressed={Boolean(selectedField.flipX)}
+                    >
+                      ↔ H
+                    </button>
+                    <button
+                      onClick={() =>
+                        updateFieldProps(selectedField.id, { flipY: !selectedField.flipY })
+                      }
+                      style={smallBtnStyle}
+                      title="Miroir vertical"
+                      aria-label="Miroir vertical"
+                      aria-pressed={Boolean(selectedField.flipY)}
+                    >
+                      ↕ V
+                    </button>
+                  </div>
+
                   {/* Text content for template-only fields */}
                   {selectedField.type === 'text' && selectedField.editableInCard === false && (
                     <div>
@@ -2322,19 +2377,39 @@ export default function App() {
                   )}
 
                   {selectedField.type === 'box' && (
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <div style={{ flex: 1 }}>
-                        <ColorPicker
-                          label="Remplissage"
-                          value={selectedField.fill || '#0f172a'}
-                          onChange={(fill) => updateFieldProps(selectedField.id, { fill })}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <ColorPicker
-                          label="Contour"
-                          value={selectedField.color || '#334155'}
-                          onChange={(color) => updateFieldProps(selectedField.id, { color })}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <ColorPicker
+                        label="Remplissage"
+                        value={selectedField.fill || '#0f172a'}
+                        onChange={(fill) => updateFieldProps(selectedField.id, { fill })}
+                      />
+                      <ColorPicker
+                        label="Contour"
+                        value={selectedField.color || '#334155'}
+                        onChange={(color) => updateFieldProps(selectedField.id, { color })}
+                      />
+                      <div>
+                        <label htmlFor="box-border-width" style={labelStyle}>
+                          {STRINGS.strokeWidth}
+                        </label>
+                        <input
+                          id="box-border-width"
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          value={selectedField.strokeWidth ?? 2}
+                          onChange={(e) =>
+                            updateFieldProps(selectedField.id, {
+                              strokeWidth: clampNumber(
+                                e.target.value,
+                                selectedField.strokeWidth ?? 2,
+                                0,
+                                100,
+                              ),
+                            })
+                          }
+                          style={inputStyle}
                         />
                       </div>
                     </div>

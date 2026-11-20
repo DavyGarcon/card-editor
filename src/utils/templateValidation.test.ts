@@ -136,6 +136,36 @@ describe('validateTemplatePack', () => {
     ).toThrow(/top, middle ou bottom/);
   });
 
+  it('validates rotation and mirror properties', () => {
+    const baseField = pack.styles[0].fields[0];
+    const result = validateTemplatePack({
+      ...pack,
+      styles: [
+        {
+          ...pack.styles[0],
+          fields: [{ ...baseField, rotation: 45, flipX: true, flipY: false }],
+        },
+      ],
+    });
+    expect(result.styles[0].fields[0]).toMatchObject({
+      rotation: 45,
+      flipX: true,
+      flipY: false,
+    });
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ ...baseField, flipX: 'yes' }] }],
+      }),
+    ).toThrow(/flipX doit être un booléen/);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ ...baseField, rotation: 400 }] }],
+      }),
+    ).toThrow(/rotation doit être compris/);
+  });
+
   it('sanitizes rich text HTML', () => {
     const result = validateTemplatePack({
       ...pack,

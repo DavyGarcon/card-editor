@@ -28,12 +28,29 @@ describe('ColorPicker', () => {
     expect(onChange).toHaveBeenLastCalledWith('#123456');
   });
 
-  it('allows transparent values when enabled', () => {
+  it('allows transparent values by default', () => {
     const onChange = vi.fn();
-    render(<ColorPicker value="#ffffff" onChange={onChange} allowTransparent />);
+    render(<ColorPicker value="#ffffff" onChange={onChange} />);
     fireEvent.change(screen.getByLabelText('Couleur hexadécimale'), {
       target: { value: 'transparent' },
     });
     expect(onChange).toHaveBeenLastCalledWith('transparent');
+  });
+
+  it('offers a transparent swatch in the palette by default', () => {
+    const onChange = vi.fn();
+    render(<ColorPicker value="#ffffff" onChange={onChange} presets={['#123456']} />);
+    fireEvent.click(screen.getByRole('button', { name: /palette de couleurs/i }));
+    fireEvent.click(screen.getByTitle('Transparent'));
+    expect(onChange).toHaveBeenLastCalledWith('transparent');
+  });
+
+  it('accepts 8-digit hex colors for partial transparency', () => {
+    const onChange = vi.fn();
+    render(<ColorPicker value="#ffffff" onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Couleur hexadécimale'), {
+      target: { value: '#ff000080' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith('#ff000080');
   });
 });

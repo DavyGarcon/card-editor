@@ -50,6 +50,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
   const effectiveFontFamily = field.fontFamily || 'Arial';
   const effectiveOpacity =
     (computed.opacity ?? field.opacity ?? 1) * (!isVisible && isDesignMode ? 0.3 : 1);
+  const effectiveRotation = computed.rotation ?? field.rotation ?? 0;
+  const effectiveFlipX = computed.flipX ?? field.flipX ?? false;
+  const effectiveFlipY = computed.flipY ?? field.flipY ?? false;
 
   // Script-controlled geometry cannot be dragged/resized — the computed value
   // would immediately overwrite the edit on the next render.
@@ -106,6 +109,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
         letterSpacing={field.letterSpacing}
         stroke={field.stroke}
         strokeWidth={field.strokeWidth}
+        rotation={effectiveRotation}
+        flipX={effectiveFlipX}
+        flipY={effectiveFlipY}
         isDesignMode={isDesignMode}
         isSelected={isSelected}
         onSelect={onSelect}
@@ -122,15 +128,26 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
 
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
+    const nextFlipX = scaleX < 0;
+    const nextFlipY = scaleY < 0;
 
-    node.scaleX(1);
-    node.scaleY(1);
+    // Mirror is stored as a flag; reset the live scale to ±1 so the next render
+    // does not compound the flip with the resize factor.
+    node.scaleX(nextFlipX ? -1 : 1);
+    node.scaleY(nextFlipY ? -1 : 1);
 
     onChange({
       x: scriptControlsPosition ? field.x : Math.round(node.x()),
       y: scriptControlsPosition ? field.y : Math.round(node.y()),
-      width: scriptControlsSize ? field.width : Math.max(20, Math.round(node.width() * scaleX)),
-      height: scriptControlsSize ? field.height : Math.max(20, Math.round(node.height() * scaleY)),
+      width: scriptControlsSize
+        ? field.width
+        : Math.max(20, Math.round(node.width() * Math.abs(scaleX))),
+      height: scriptControlsSize
+        ? field.height
+        : Math.max(20, Math.round(node.height() * Math.abs(scaleY))),
+      rotation: Math.round(node.rotation()),
+      flipX: nextFlipX,
+      flipY: nextFlipY,
     });
   };
 
@@ -146,8 +163,11 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           height={effectiveHeight}
           fill={effectiveFill}
           stroke={effectiveColor}
-          strokeWidth={2}
+          strokeWidth={field.strokeWidth ?? 2}
           cornerRadius={6}
+          rotation={effectiveRotation}
+          scaleX={effectiveFlipX ? -1 : 1}
+          scaleY={effectiveFlipY ? -1 : 1}
           opacity={effectiveOpacity}
           draggable={isDesignMode && !scriptControlsPosition}
           onClick={onSelect}
@@ -177,6 +197,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           letterSpacing={field.letterSpacing}
           stroke={field.stroke}
           strokeWidth={field.strokeWidth}
+          rotation={effectiveRotation}
+          scaleX={effectiveFlipX ? -1 : 1}
+          scaleY={effectiveFlipY ? -1 : 1}
           draggable={isDesignMode && !scriptControlsPosition}
           onClick={onSelect}
           onTap={onSelect}
@@ -193,6 +216,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           y={effectiveY}
           width={effectiveWidth}
           height={effectiveHeight}
+          rotation={effectiveRotation}
+          scaleX={effectiveFlipX ? -1 : 1}
+          scaleY={effectiveFlipY ? -1 : 1}
           opacity={effectiveOpacity}
           draggable={isDesignMode && !scriptControlsPosition}
           onClick={onSelect}
@@ -232,7 +258,7 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           name="template-transformer"
           ref={trRef}
           enabledAnchors={scriptControlsSize ? [] : undefined}
-          rotateEnabled={false}
+          rotateEnabled
           boundBoxFunc={(oldBox, newBox) =>
             newBox.width < 20 || newBox.height < 20 ? oldBox : newBox
           }

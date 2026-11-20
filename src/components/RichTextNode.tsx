@@ -23,6 +23,9 @@ export interface RichTextNodeProps {
   letterSpacing?: number;
   stroke?: string;
   strokeWidth?: number;
+  rotation?: number;
+  flipX?: boolean;
+  flipY?: boolean;
   isDesignMode: boolean;
   isSelected: boolean;
   onSelect: () => void;
@@ -56,6 +59,9 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
   letterSpacing,
   stroke,
   strokeWidth,
+  rotation = 0,
+  flipX = false,
+  flipY = false,
   isDesignMode,
   isSelected,
   onSelect,
@@ -94,14 +100,19 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
 
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
-    node.scaleX(1);
-    node.scaleY(1);
+    const nextFlipX = scaleX < 0;
+    const nextFlipY = scaleY < 0;
+    node.scaleX(nextFlipX ? -1 : 1);
+    node.scaleY(nextFlipY ? -1 : 1);
 
     onChange({
       x: canDrag ? Math.round(node.x()) : x,
       y: canDrag ? Math.round(node.y()) : y,
-      width: canResize ? Math.max(20, Math.round(node.width() * scaleX)) : width,
-      height: canResize ? Math.max(20, Math.round(node.height() * scaleY)) : height,
+      width: canResize ? Math.max(20, Math.round(node.width() * Math.abs(scaleX))) : width,
+      height: canResize ? Math.max(20, Math.round(node.height() * Math.abs(scaleY))) : height,
+      rotation: Math.round(node.rotation()),
+      flipX: nextFlipX,
+      flipY: nextFlipY,
     });
   };
 
@@ -114,6 +125,9 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
         y={y}
         width={width}
         height={height}
+        rotation={rotation}
+        scaleX={flipX ? -1 : 1}
+        scaleY={flipY ? -1 : 1}
         opacity={opacity}
         draggable={isDesignMode && canDrag}
         onClick={onSelect}
@@ -158,7 +172,7 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
           name="template-transformer"
           enabledAnchors={canResize ? undefined : []}
           ref={transformerRef}
-          rotateEnabled={false}
+          rotateEnabled
           boundBoxFunc={(oldBox, newBox) =>
             newBox.width < 20 || newBox.height < 20 ? oldBox : newBox
           }
