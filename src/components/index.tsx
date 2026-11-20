@@ -26,3 +26,15 @@ export { ColorPicker, DEFAULT_CARD_SWATCHES, type ColorPickerProps } from './Col
 // Separate save/load controls for decks and template packs
 export { DeckIOControls, type DeckIOControlsProps } from './DeckIOControls';
 export { TemplateIOControls, type TemplateIOControlsProps } from './TemplateIOControls';
+
+// Reusable editor panels extracted from the main workspace
+export {
+  ErrorBanner,
+  ZoomToolbar,
+  ScriptHelpPanel,
+  PdfOptionsDialog,
+  type ErrorBannerProps,
+  type ZoomToolbarProps,
+  type PdfPrintOptions,
+  type PdfOptionsDialogProps,
+} from './editorPanels';

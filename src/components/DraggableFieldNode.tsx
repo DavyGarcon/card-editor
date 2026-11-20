@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Rect, Text, Image as KonvaImage, Group, Transformer } from 'react-konva';
 import Konva from 'konva';
 import { ResolvedCardStyle, TemplateField } from '../types/template';
 import { evaluateFieldScript } from '../utils/scriptEvaluator';
+import { useImage } from '../hooks/useImage';
 import { RichTextNode } from './RichTextNode';
 
 interface DraggableNodeProps {
@@ -30,10 +31,6 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
 }) => {
   const shapeRef = useRef<any>(null);
   const trRef = useRef<Konva.Transformer>(null);
-  const [loadedImage, setLoadedImage] = useState<{
-    src: string;
-    image: HTMLImageElement;
-  } | null>(null);
 
   const computed = evaluateFieldScript(field.script, {
     card: allCardValues,
@@ -76,36 +73,8 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
 
   // Image loading for image fields
   const imageSrc = computed.src ?? rawValue ?? field.defaultValue ?? '';
-
-  useEffect(() => {
-    if (field.type !== 'image' || !imageSrc) return;
-    let cancelled = false;
-    const img = new window.Image();
-    const timeout = window.setTimeout(() => {
-      if (!cancelled) setLoadedImage(null);
-    }, 8000);
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (cancelled) return;
-      window.clearTimeout(timeout);
-      setLoadedImage({ src: imageSrc, image: img });
-    };
-    img.onerror = () => {
-      if (cancelled) return;
-      window.clearTimeout(timeout);
-      setLoadedImage(null);
-    };
-    img.src = imageSrc;
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-      img.onload = null;
-      img.onerror = null;
-    };
-  }, [field.type, imageSrc]);
-
-  // A failed or pending load shows the placeholder instead of a stale image.
-  const loadedImg = loadedImage?.src === imageSrc ? loadedImage.image : null;
+  // Pending, failed or timed-out loads show the placeholder instead of a stale image.
+  const loadedImg = useImage(field.type === 'image' ? imageSrc : undefined);
 
   useEffect(() => {
     if (isSelected && isDesignMode && trRef.current && shapeRef.current) {
@@ -132,6 +101,11 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
         color={effectiveColor}
         align={field.align || 'left'}
         opacity={effectiveOpacity}
+        verticalAlign={field.verticalAlign}
+        lineHeight={field.lineHeight}
+        letterSpacing={field.letterSpacing}
+        stroke={field.stroke}
+        strokeWidth={field.strokeWidth}
         isDesignMode={isDesignMode}
         isSelected={isSelected}
         onSelect={onSelect}
@@ -198,6 +172,11 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           fill={effectiveColor}
           align={field.align || 'left'}
           opacity={effectiveOpacity}
+          verticalAlign={field.verticalAlign ?? 'top'}
+          lineHeight={field.lineHeight}
+          letterSpacing={field.letterSpacing}
+          stroke={field.stroke}
+          strokeWidth={field.strokeWidth}
           draggable={isDesignMode && !scriptControlsPosition}
           onClick={onSelect}
           onTap={onSelect}

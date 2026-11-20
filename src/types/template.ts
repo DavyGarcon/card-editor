@@ -23,6 +23,11 @@ export interface TemplateField {
   fontFamily?: string;
   color?: string;
   align?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  lineHeight?: number;
+  letterSpacing?: number;
+  stroke?: string;
+  strokeWidth?: number;
   // Box styling
   fill?: string;
   // Select options

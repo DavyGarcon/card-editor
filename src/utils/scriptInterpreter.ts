@@ -8,7 +8,7 @@
 type Value = unknown;
 type Node =
   | { kind: 'literal'; value: Value }
-  | { kind: 'identifier'; name: string }
+  | { kind: 'identifier'; name: string; position?: number }
   | { kind: 'template'; parts: Array<{ text?: string; expr?: Node }> }
   | { kind: 'object'; entries: Array<{ key: string; value: Node }> }
   | { kind: 'array'; items: Node[] }
@@ -16,8 +16,12 @@ type Node =
   | { kind: 'binary'; operator: string; left: Node; right: Node }
   | { kind: 'logical'; operator: string; left: Node; right: Node }
   | { kind: 'conditional'; test: Node; consequent: Node; alternate: Node }
-  | { kind: 'member'; object: Node; property: Node }
-  | { kind: 'call'; callee: Node; args: Node[] };
+  | { kind: 'member'; object: Node; property: Node; position?: number }
+  | { kind: 'call'; callee: Node; args: Node[]; position?: number }
+  | { kind: 'block'; body: Node[] }
+  | { kind: 'if'; test: Node; consequent: Node; alternate?: Node }
+  | { kind: 'assignment'; name: string; value: Node }
+  | { kind: 'return'; value: Node };
 
 interface TemplatePart {
   text?: string;
@@ -31,7 +35,10 @@ interface Token {
   position: number;
 }
 
-export class ScriptSyntaxError extends Error {}
+export class ScriptSyntaxError extends Error {
+  /** 1-based line in the original script, when known. */
+  line?: number;
+}
 
 // Resource limits for scripts embedded in untrusted template packs.
 const MAX_SCRIPT_LENGTH = 20_000;
@@ -41,15 +48,28 @@ const MAX_STRING_LENGTH = 200_000;
 const MAX_REPEAT = 100;
 const MAX_PAD = 10_000;
 
-let stepBudget = 0;
+/** Per-evaluation state: no shared budget that could leak between nested runs. */
+interface EvalState {
+  steps: number;
+}
 
-function tick(): void {
-  if (--stepBudget < 0) throw new ScriptSyntaxError('Script trop long ou trop coûteux.');
+let currentScriptSource = '';
+
+function syntaxError(message: string, position?: number): ScriptSyntaxError {
+  const error = new ScriptSyntaxError(message);
+  if (position !== undefined && currentScriptSource) {
+    error.line = currentScriptSource.slice(0, position).split('\n').length;
+  }
+  return error;
+}
+
+function tick(state: EvalState): void {
+  if (--state.steps < 0) throw syntaxError('Script trop long ou trop coûteux.');
 }
 
 function limitString(value: string): string {
   if (value.length > MAX_STRING_LENGTH) {
-    throw new ScriptSyntaxError('Script: chaîne de résultat trop longue.');
+    throw syntaxError('Script: chaîne de résultat trop longue.');
   }
   return value;
 }
@@ -123,7 +143,7 @@ function unescape(raw: string): string {
 
 function tokenize(source: string): Token[] {
   if (source.length > MAX_SCRIPT_LENGTH) {
-    throw new ScriptSyntaxError(`Script trop long (${MAX_SCRIPT_LENGTH} caractères maximum).`);
+    throw syntaxError(`Script trop long (${MAX_SCRIPT_LENGTH} caractères maximum).`);
   }
   const tokens: Token[] = [];
   let i = 0;
@@ -139,7 +159,7 @@ function tokenize(source: string): Token[] {
         raw += source[i++];
       }
     }
-    if (source[i] !== quote) throw new ScriptSyntaxError('Chaîne non terminée.');
+    if (source[i] !== quote) throw syntaxError('Chaîne non terminée.', i);
     i++;
     return unescape(raw);
   };
@@ -197,12 +217,12 @@ function tokenize(source: string): Token[] {
       text += ch;
       i++;
     }
-    throw new ScriptSyntaxError('Template literal non terminé.');
+    throw syntaxError('Template literal non terminé.');
   };
 
   while (i < source.length) {
     if (tokens.length >= MAX_TOKENS) {
-      throw new ScriptSyntaxError(`Script trop complexe (${MAX_TOKENS} jetons maximum).`);
+      throw syntaxError(`Script trop complexe (${MAX_TOKENS} jetons maximum).`);
     }
     const ch = source[i];
 
@@ -216,15 +236,28 @@ function tokenize(source: string): Token[] {
     }
     if (ch === '/' && source[i + 1] === '*') {
       const end = source.indexOf('*/', i + 2);
-      if (end === -1) throw new ScriptSyntaxError('Commentaire non terminé.');
+      if (end === -1) throw syntaxError('Commentaire non terminé.');
       i = end + 2;
       continue;
     }
     if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(source[i + 1] || ''))) {
       const start = i;
-      while (i < source.length && /[0-9._eE+-]/.test(source[i])) {
-        if ((source[i] === '+' || source[i] === '-') && !/[eE]/.test(source[i - 1])) break;
-        i++;
+      let seenDot = false;
+      let seenExponent = false;
+      while (i < source.length) {
+        const digit = source[i];
+        if (/[0-9_]/.test(digit)) {
+          i++;
+        } else if (digit === '.' && !seenDot && !seenExponent) {
+          seenDot = true;
+          i++;
+        } else if ((digit === 'e' || digit === 'E') && !seenExponent) {
+          seenExponent = true;
+          i++;
+          if (source[i] === '+' || source[i] === '-') i++;
+        } else {
+          break;
+        }
       }
       tokens.push({
         type: 'number',
@@ -261,7 +294,7 @@ function tokenize(source: string): Token[] {
       i++;
       continue;
     }
-    throw new ScriptSyntaxError(`Caractère inattendu « ${ch} » à la position ${i}.`);
+    throw syntaxError(`Caractère inattendu « ${ch} » à la position ${i}.`, i);
   }
 
   tokens.push({ type: 'eof', value: '', position: i });
@@ -280,7 +313,7 @@ class Parser {
   private consume(value?: string): Token {
     const token = this.current;
     if (value !== undefined && token.value !== value) {
-      throw new ScriptSyntaxError(`Attendu « ${value} » à la position ${token.position}.`);
+      throw syntaxError(`Attendu « ${value} » à la position ${token.position}.`, token.position);
     }
     this.index++;
     return token;
@@ -292,37 +325,72 @@ class Parser {
 
   parse(): Node[] {
     const statements: Node[] = [];
-    while (this.current.type !== 'eof') {
-      if (this.match('const') || this.match('let')) statements.push(this.parseDeclaration());
-      else if (this.match('return')) statements.push(this.parseReturn());
-      else statements.push(this.parseExpressionStatement());
-    }
+    while (this.current.type !== 'eof') statements.push(this.parseStatement());
     return statements;
+  }
+
+  private parseStatement(): Node {
+    if (this.match('{')) return this.parseBlock();
+    if (this.match('if')) return this.parseIf();
+    if (this.match('const') || this.match('let')) return this.parseDeclaration();
+    if (this.match('return')) return this.parseReturn();
+    return this.parseExpressionStatement();
+  }
+
+  private parseBlock(): Node {
+    this.consume('{');
+    const body: Node[] = [];
+    while (!this.match('}') && this.current.type !== 'eof') body.push(this.parseStatement());
+    this.consume('}');
+    return { kind: 'block', body };
+  }
+
+  private parseIf(): Node {
+    this.consume('if');
+    this.consume('(');
+    const test = this.parseExpression(0);
+    this.consume(')');
+    const consequent = this.parseStatement();
+    const alternate = this.match('else') ? (this.consume(), this.parseStatement()) : undefined;
+    return { kind: 'if', test, consequent, alternate };
   }
 
   private parseDeclaration(): Node {
     this.consume();
     const name = this.consume();
-    if (name.type !== 'ident') throw new ScriptSyntaxError('Nom de variable invalide.');
+    if (name.type !== 'ident') throw syntaxError('Nom de variable invalide.', name.position);
     this.consume('=');
     const value = this.parseExpression(0);
-    this.consume(';');
-    return { kind: 'assignment', name: name.value, value } as unknown as Node;
+    if (this.match(';')) this.consume(';');
+    else if (!this.match('}') && this.current.type !== 'eof') {
+      throw syntaxError('Attendu « ; » après la déclaration.', this.current.position);
+    }
+    return { kind: 'assignment', name: name.value, value };
   }
 
   private parseReturn(): Node {
     this.consume('return');
     const value =
-      this.match(';') || this.current.type === 'eof'
+      this.match(';') || this.match('}') || this.current.type === 'eof'
         ? ({ kind: 'literal', value: undefined } as Node)
         : this.parseExpression(0);
-    if (this.match(';')) this.consume(';');
-    return { kind: 'return', value } as unknown as Node;
+    if (this.match(';')) {
+      this.consume(';');
+    } else if (!this.match('}') && this.current.type !== 'eof') {
+      throw syntaxError('Attendu « ; » après return.', this.current.position);
+    }
+    return { kind: 'return', value };
   }
 
   private parseExpressionStatement(): Node {
     const expression = this.parseExpression(0);
-    if (this.match(';')) this.consume(';');
+    if (this.match(';')) {
+      this.consume(';');
+    } else if (!this.match('}') && this.current.type !== 'eof') {
+      // Prevents malformed literals such as `1..2` from being parsed as two
+      // adjacent expressions.
+      throw syntaxError('Attendu « ; » après expression.', this.current.position);
+    }
     return expression;
   }
 
@@ -376,14 +444,16 @@ class Parser {
           kind: 'member',
           object: expression,
           property: { kind: 'literal', value: property.value },
+          position: property.position,
         };
       } else if (this.match('[')) {
         this.consume('[');
+        const open = this.current;
         const property = this.parseExpression(0);
         this.consume(']');
-        expression = { kind: 'member', object: expression, property };
+        expression = { kind: 'member', object: expression, property, position: open.position };
       } else if (this.match('(')) {
-        this.consume('(');
+        const open = this.consume('(');
         const args: Node[] = [];
         if (!this.match(')')) {
           do {
@@ -391,7 +461,7 @@ class Parser {
           } while (this.match(',') && this.consume());
         }
         this.consume(')');
-        expression = { kind: 'call', callee: expression, args };
+        expression = { kind: 'call', callee: expression, args, position: open.position };
       } else {
         break;
       }
@@ -415,14 +485,14 @@ class Parser {
         if (part.expr === undefined) return { text: part.text || '' };
         const subParser = new Parser(tokenize(part.expr));
         const statements = subParser.parse();
-        if (statements.length !== 1) throw new ScriptSyntaxError('Interpolation invalide.');
+        if (statements.length !== 1) throw syntaxError('Interpolation invalide.');
         return { expr: statements[0] };
       });
       return { kind: 'template', parts };
     }
     if (token.type === 'ident') {
       this.consume();
-      return { kind: 'identifier', name: token.value };
+      return { kind: 'identifier', name: token.value, position: token.position };
     }
     if (token.type === 'keyword') {
       this.consume();
@@ -443,7 +513,7 @@ class Parser {
       while (!this.match('}')) {
         const keyToken = this.consume();
         if (keyToken.type !== 'ident' && keyToken.type !== 'string' && keyToken.type !== 'number') {
-          throw new ScriptSyntaxError("Clé d'objet invalide.");
+          throw syntaxError("Clé d'objet invalide.", keyToken.position);
         }
         this.consume(':');
         entries.push({ key: keyToken.value, value: this.parseExpression(0) });
@@ -464,7 +534,7 @@ class Parser {
       this.consume(']');
       return { kind: 'array', items };
     }
-    throw new ScriptSyntaxError(`Expression inattendue à la position ${token.position}.`);
+    throw syntaxError(`Expression inattendue à la position ${token.position}.`, token.position);
   }
 }
 
@@ -534,9 +604,9 @@ const GLOBALS: Record<string, Value> = {
 
 const BLOCKED_KEYS = new Set(['constructor', '__proto__', 'prototype', 'toString', 'valueOf']);
 
-function memberValue(object: Value, key: Value): Value {
+function memberValue(object: Value, key: Value, position?: number): Value {
   const property = String(key);
-  if (BLOCKED_KEYS.has(property)) throw new ScriptSyntaxError(`Accès interdit à « ${property} ».`);
+  if (BLOCKED_KEYS.has(property)) throw syntaxError(`Accès interdit à « ${property} ».`, position);
 
   if (typeof object === 'string') {
     if (property === 'length') return object.length;
@@ -559,45 +629,66 @@ function memberValue(object: Value, key: Value): Value {
   return undefined;
 }
 
-function evaluate(node: Node, scope: Map<string, Value>): Value {
-  tick();
+function evaluate(node: Node, scope: Map<string, Value>, state: EvalState): Value {
+  tick(state);
   switch (node.kind) {
     case 'literal':
       return node.value;
     case 'identifier':
       if (scope.has(node.name)) return scope.get(node.name);
       if (Object.prototype.hasOwnProperty.call(GLOBALS, node.name)) return GLOBALS[node.name];
-      throw new ScriptSyntaxError(`Variable inconnue « ${node.name} ».`);
+      throw syntaxError(`Variable inconnue « ${node.name} ».`, node.position);
+    case 'assignment':
+      scope.set(node.name, evaluate(node.value, scope, state));
+      return undefined;
+    case 'return':
+      throw new ReturnSignal(evaluate(node.value, scope, state));
+    case 'block': {
+      let last: Value = undefined;
+      for (const statement of node.body) {
+        tick(state);
+        last = evaluate(statement, scope, state);
+      }
+      return last;
+    }
+    case 'if':
+      return evaluate(node.test, scope, state)
+        ? evaluate(node.consequent, scope, state)
+        : node.alternate
+          ? evaluate(node.alternate, scope, state)
+          : undefined;
     case 'template':
       return limitString(
         node.parts
-          .map((part) => (part.expr ? String(evaluate(part.expr, scope) ?? '') : part.text || ''))
+          .map((part) =>
+            part.expr ? String(evaluate(part.expr, scope, state) ?? '') : part.text || '',
+          )
           .join(''),
       );
     case 'object': {
       const result: Record<string, Value> = Object.create(null);
       for (const entry of node.entries) {
-        tick();
-        result[entry.key] = evaluate(entry.value, scope);
+        tick(state);
+        result[entry.key] = evaluate(entry.value, scope, state);
       }
       return Object.freeze(result);
     }
     case 'array': {
       const items = node.items.map((item) => {
-        tick();
-        return evaluate(item, scope);
+        tick(state);
+        return evaluate(item, scope, state);
       });
       return Object.freeze(items);
     }
     case 'unary': {
-      const value = evaluate(node.argument, scope);
+      const value = evaluate(node.argument, scope, state);
       if (node.operator === '!') return !value;
       if (node.operator === '-') return -Number(value);
       return Number(value);
     }
     case 'binary': {
-      const left = evaluate(node.left, scope) as never;
-      const right = evaluate(node.right, scope) as never;
+      const left = evaluate(node.left, scope, state) as never;
+      const right = evaluate(node.right, scope, state) as never;
       switch (node.operator) {
         case '+':
           return left + right;
@@ -626,60 +717,61 @@ function evaluate(node: Node, scope: Map<string, Value>): Value {
         case '>=':
           return left >= right;
         default:
-          throw new ScriptSyntaxError(`Opérateur inconnu « ${node.operator} ».`);
+          throw syntaxError(`Opérateur inconnu « ${node.operator} ».`);
       }
     }
     case 'logical': {
-      const left = evaluate(node.left, scope);
-      if (node.operator === '&&') return left ? evaluate(node.right, scope) : left;
-      if (node.operator === '||') return left ? left : evaluate(node.right, scope);
-      return left === undefined || left === null ? evaluate(node.right, scope) : left;
+      const left = evaluate(node.left, scope, state);
+      if (node.operator === '&&') return left ? evaluate(node.right, scope, state) : left;
+      if (node.operator === '||') return left ? left : evaluate(node.right, scope, state);
+      return left === undefined || left === null ? evaluate(node.right, scope, state) : left;
     }
     case 'conditional':
-      return evaluate(node.test, scope)
-        ? evaluate(node.consequent, scope)
-        : evaluate(node.alternate, scope);
+      return evaluate(node.test, scope, state)
+        ? evaluate(node.consequent, scope, state)
+        : evaluate(node.alternate, scope, state);
     case 'member':
-      return memberValue(evaluate(node.object, scope), evaluate(node.property, scope));
+      return memberValue(
+        evaluate(node.object, scope, state),
+        evaluate(node.property, scope, state),
+        node.position,
+      );
     case 'call': {
-      const callee = evaluate(node.callee, scope);
+      const callee = evaluate(node.callee, scope, state);
       if (typeof callee !== 'function')
-        throw new ScriptSyntaxError("Appel d'une valeur non callable.");
-      return callee(...node.args.map((arg) => evaluate(arg, scope)));
+        throw syntaxError("Appel d'une valeur non callable.", node.position);
+      return callee(...node.args.map((arg) => evaluate(arg, scope, state)));
     }
     default:
-      throw new ScriptSyntaxError('Nœud de script inconnu.');
+      throw syntaxError('Nœud de script inconnu.');
   }
 }
 
 /** Runs a render script in the restricted interpreter and returns its `return` value. */
 export function interpretScript(script: string, context: Record<string, Value>): Value {
-  const statements = new Parser(tokenize(script)).parse() as ProgramNode[];
-  const scope = new Map<string, Value>();
-  for (const [key, value] of Object.entries(context)) {
-    if (BLOCKED_KEYS.has(key)) continue;
-    scope.set(key, value);
-  }
-
-  const previousBudget = stepBudget;
-  stepBudget = MAX_STEPS;
+  const previousSource = currentScriptSource;
+  currentScriptSource = script;
   try {
+    const statements = new Parser(tokenize(script)).parse() as ProgramNode[];
+    const scope = new Map<string, Value>();
+    for (const [key, value] of Object.entries(context)) {
+      if (BLOCKED_KEYS.has(key)) continue;
+      scope.set(key, value);
+    }
+    const state: EvalState = { steps: MAX_STEPS };
     let lastValue: Value = undefined;
     for (const statement of statements) {
-      tick();
-      if ('kind' in statement && statement.kind === 'assignment') {
-        scope.set(statement.name, evaluate(statement.value, scope));
-      } else if ('kind' in statement && statement.kind === 'return') {
-        throw new ReturnSignal(evaluate(statement.value, scope));
-      } else {
-        lastValue = evaluate(statement as Node, scope);
-      }
+      tick(state);
+      lastValue = evaluate(statement, scope, state);
     }
     return lastValue;
   } catch (error) {
     if (error instanceof ReturnSignal) return error.value;
+    if (error instanceof ScriptSyntaxError && error.line && !error.message.includes('ligne')) {
+      error.message = `${error.message} (ligne ${error.line})`;
+    }
     throw error;
   } finally {
-    stepBudget = previousBudget;
+    currentScriptSource = previousSource;
   }
 }

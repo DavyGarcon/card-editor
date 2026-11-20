@@ -49,11 +49,37 @@ describe('App integration', () => {
     saveTemplateFile.mockClear();
   });
 
-  it('starts in card mode with deck-only controls', () => {
+  it('starts with the built-in templates and an empty deck', () => {
     render(<App />);
+    const picker = screen.getByRole('combobox', { name: 'Template intégré' }) as HTMLSelectElement;
+    expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
+      'Pack Example',
+    ]);
+    // Alphabetically first template is the one loaded by default.
+    expect(picker.value).toBe(picker.options[0].value);
+
+    expect(screen.getByText('Deck (0)')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Nom du Sort' })).toHaveValue('');
     expect(screen.getByRole('button', { name: /Ajouter une Carte/i })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: /Rendu des cartes/i })).toBeInTheDocument();
     expect(screen.queryByText(/Éditeur de Template/i)).not.toBeInTheDocument();
+  });
+
+  it('ignores stored sessions on refresh: no deck and only built-in templates', () => {
+    localStorage.setItem(
+      'modern-geckos-deck-v1',
+      JSON.stringify({
+        format: 'modern-geckos-deck',
+        cards: [{ id: 'x', styleKey: 'spell_fire', values: {} }],
+      }),
+    );
+    localStorage.setItem(
+      'modern-geckos-template-v1',
+      JSON.stringify({ format: 'modern-geckos-template', pack: { name: 'Ancien', styles: [] } }),
+    );
+    render(<App />);
+    expect(screen.getByText('Deck (0)')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Ancien' })).not.toBeInTheDocument();
   });
 
   it('shows template-only controls after switching mode', () => {

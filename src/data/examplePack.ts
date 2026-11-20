@@ -1,7 +1,8 @@
-import { CardData, CardTemplatePack } from '../types/template';
+import { CardTemplatePack } from '../types/template';
 
-export const INITIAL_PACK: CardTemplatePack = {
-  name: 'Pack RPG Héritiers',
+/** A built-in template. Any `src/data/*.ts` file exporting `pack` is discovered automatically. */
+export const pack: CardTemplatePack = {
+  name: 'Pack Example',
   activeStyleKey: 'spell_fire',
   styles: [
     {
@@ -23,7 +24,6 @@ export const INITIAL_PACK: CardTemplatePack = {
           fontSize: 24,
           color: '#f8fafc',
           align: 'center',
-          defaultValue: 'Sortilège',
         },
         {
           id: 'school',
@@ -36,7 +36,6 @@ export const INITIAL_PACK: CardTemplatePack = {
           fontSize: 14,
           color: '#94a3b8',
           align: 'center',
-          defaultValue: 'evocation',
           options: [
             { value: 'evocation', label: 'Évocation' },
             { value: 'illusion', label: 'Illusion' },
@@ -65,7 +64,6 @@ export const INITIAL_PACK: CardTemplatePack = {
           fontSize: 15,
           color: '#f1f5f9',
           align: 'left',
-          defaultValue: 'Décrivez les effets du sort ici.',
         },
         {
           id: 'rarity_badge',
@@ -78,7 +76,6 @@ export const INITIAL_PACK: CardTemplatePack = {
           fontSize: 13,
           color: '#fbbf24',
           align: 'center',
-          defaultValue: 'common',
           options: [
             { value: 'common', label: 'Sort Commun' },
             { value: 'rare', label: 'Sort Rare' },
@@ -113,17 +110,3 @@ export const INITIAL_PACK: CardTemplatePack = {
     },
   ],
 };
-
-export const INITIAL_CARDS: CardData[] = [
-  {
-    id: '1',
-    styleKey: 'spell_fire',
-    values: {
-      title: 'Boule de Feu',
-      school: 'evocation',
-      rules:
-        'Un trait lumineux jaillit de votre index vers un point choisi à portée et explose dans un rugissement de flammes.',
-      rarity_badge: 'rare',
-    },
-  },
-];

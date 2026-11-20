@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { loadImage } from '../utils/imageLoader';
 
 export interface ImageCropperProps {
   /** Image source (Data URL or external URL with CORS enabled) */
@@ -29,6 +30,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [error, setError] = useState<{ src: string; message: string } | null>(null);
+  const [exportWidth, setExportWidth] = useState<number>(outputWidth);
 
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -81,37 +83,24 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   const imageEl = loadedImage?.src === imageSrc ? loadedImage.image : null;
   const errorMessage = error?.src === imageSrc ? error.message : null;
 
-  // Load image safely
+  // Load image safely through the shared loader (timeout + CORS handling).
   useEffect(() => {
     let cancelled = false;
-    const img = new Image();
-    const timeout = window.setTimeout(() => {
-      if (!cancelled) {
-        setError({ src: imageSrc, message: "Le chargement de l'image a expiré." });
-      }
-    }, 8000);
-    const fail = (message: string) => {
-      if (!cancelled) {
-        window.clearTimeout(timeout);
-        setError({ src: imageSrc, message });
-      }
-    };
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    loadImage(imageSrc, 8000).then((img) => {
       if (cancelled) return;
-      window.clearTimeout(timeout);
+      if (!img) {
+        setError({
+          src: imageSrc,
+          message: "Impossible de charger l'image (fichier invalide, expiration ou droits CORS).",
+        });
+        return;
+      }
       setLoadedImage({ src: imageSrc, image: img });
       setZoom(1);
       setOffset({ x: 0, y: 0 });
-    };
-    img.onerror = () =>
-      fail("Impossible de charger l'image (vérifiez le fichier ou les droits CORS).");
-    img.src = imageSrc;
+    });
     return () => {
       cancelled = true;
-      window.clearTimeout(timeout);
-      img.onload = null;
-      img.onerror = null;
     };
   }, [imageSrc]);
 
@@ -215,19 +204,20 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   const handleConfirm = () => {
     if (!imageEl) return;
 
-    const exportHeight = Math.round(outputWidth / aspectRatio);
+    const width = Math.min(4000, Math.max(16, Math.round(exportWidth) || outputWidth));
+    const exportHeight = Math.round(width / aspectRatio);
     const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = outputWidth;
+    exportCanvas.width = width;
     exportCanvas.height = exportHeight;
 
     const ctx = exportCanvas.getContext('2d');
     if (!ctx) return;
 
-    const ratioFactor = outputWidth / viewportWidth;
+    const ratioFactor = width / viewportWidth;
     const scale = getBaseScale(imageEl) * zoom * ratioFactor;
     const drawW = imageEl.naturalWidth * scale;
     const drawH = imageEl.naturalHeight * scale;
-    const drawX = (outputWidth - drawW) / 2 + offset.x * ratioFactor;
+    const drawX = (width - drawW) / 2 + offset.x * ratioFactor;
     const drawY = (exportHeight - drawH) / 2 + offset.y * ratioFactor;
 
     ctx.drawImage(imageEl, drawX, drawY, drawW, drawH);
@@ -303,6 +293,17 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
               >
                 Réinitialiser
               </button>
+              <label style={styles.zoomLabel}>
+                Résolution (px)
+                <input
+                  type="number"
+                  min={16}
+                  max={4000}
+                  value={exportWidth}
+                  onChange={(e) => setExportWidth(Number(e.target.value))}
+                  style={styles.numberInput}
+                />
+              </label>
             </div>
           </>
         )}
@@ -382,6 +383,15 @@ const styles: Record<string, React.CSSProperties> = {
   slider: {
     width: '100%',
     accentColor: '#f59e0b',
+  },
+  numberInput: {
+    width: '100%',
+    backgroundColor: '#0f172a',
+    color: '#f8fafc',
+    border: '1px solid #334155',
+    borderRadius: '4px',
+    padding: '5px 7px',
+    fontSize: '13px',
   },
   actions: {
     display: 'flex',

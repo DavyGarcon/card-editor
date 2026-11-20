@@ -19,6 +19,12 @@ interface LayoutOptions {
   fontSize: number;
   align?: 'left' | 'center' | 'right';
   fontFamily?: string;
+  /** Field height, used for vertical alignment of the laid-out text block. */
+  height?: number;
+  /** Multiplier of fontSize (Konva-compatible). */
+  lineHeight?: number;
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  letterSpacing?: number;
 }
 
 const DEFAULT_FONT_FAMILY = 'Arial';
@@ -50,15 +56,22 @@ function measure(
   italic: boolean,
   fontSize: number,
   fontFamily: string,
+  letterSpacing = 0,
 ): number {
   const ctx = getMeasureContext();
-  if (!ctx) return text.length * fontSize * 0.5;
+  const spacing = Math.max(0, text.length - 1) * letterSpacing;
+  if (!ctx) return text.length * fontSize * 0.5 + spacing;
   ctx.font = `${toFontStyle(bold, italic)} normal ${fontSize}px ${fontFamily}`;
-  return ctx.measureText(text).width;
+  return ctx.measureText(text).width + spacing;
 }
 
 /** Splits parsed HTML segments into words, spaces and explicit line breaks. */
-function tokenize(segments: StyledTextSegment[], fontSize: number, fontFamily: string): Token[] {
+function tokenize(
+  segments: StyledTextSegment[],
+  fontSize: number,
+  fontFamily: string,
+  letterSpacing: number,
+): Token[] {
   const tokens: Token[] = [];
 
   for (const segment of segments) {
@@ -74,7 +87,14 @@ function tokenize(segments: StyledTextSegment[], fontSize: number, fontFamily: s
           ...segment,
           text: piece,
           kind: /^\s+$/.test(piece) ? 'space' : 'word',
-          measuredWidth: measure(piece, segment.bold, segment.italic, fontSize, fontFamily),
+          measuredWidth: measure(
+            piece,
+            segment.bold,
+            segment.italic,
+            fontSize,
+            fontFamily,
+            letterSpacing,
+          ),
         });
       }
     }
@@ -90,9 +110,18 @@ function tokenize(segments: StyledTextSegment[], fontSize: number, fontFamily: s
  */
 export function layoutRichText(
   segments: StyledTextSegment[],
-  { width, fontSize, align = 'left', fontFamily = DEFAULT_FONT_FAMILY }: LayoutOptions,
+  {
+    width,
+    fontSize,
+    align = 'left',
+    fontFamily = DEFAULT_FONT_FAMILY,
+    height,
+    lineHeight,
+    verticalAlign = 'top',
+    letterSpacing = 0,
+  }: LayoutOptions,
 ): StyledRichRun[] {
-  const sourceTokens = tokenize(segments, fontSize, fontFamily);
+  const sourceTokens = tokenize(segments, fontSize, fontFamily, letterSpacing);
   if (sourceTokens.length === 0) return [];
 
   // A single unbreakable word longer than the field would otherwise be drawn
@@ -117,8 +146,14 @@ export function layoutRichText(
       while (low < high) {
         const mid = Math.ceil((low + high) / 2);
         if (
-          measure(token.text.slice(start, mid), token.bold, token.italic, fontSize, fontFamily) <=
-          width
+          measure(
+            token.text.slice(start, mid),
+            token.bold,
+            token.italic,
+            fontSize,
+            fontFamily,
+            letterSpacing,
+          ) <= width
         ) {
           low = mid;
         } else {
@@ -129,7 +164,14 @@ export function layoutRichText(
       tokens.push({
         ...token,
         text: chunk,
-        measuredWidth: measure(chunk, token.bold, token.italic, fontSize, fontFamily),
+        measuredWidth: measure(
+          chunk,
+          token.bold,
+          token.italic,
+          fontSize,
+          fontFamily,
+          letterSpacing,
+        ),
       });
       start = low;
     }
@@ -166,7 +208,7 @@ export function layoutRichText(
   const lastLine = lines[lines.length - 1];
   while (lastLine.length > 0 && lastLine[lastLine.length - 1].kind === 'space') lastLine.pop();
 
-  const lineHeight = fontSize * LINE_HEIGHT_FACTOR;
+  const lineStep = fontSize * (lineHeight ?? LINE_HEIGHT_FACTOR);
   const runs: StyledRichRun[] = [];
 
   lines.forEach((line, lineIndex) => {
@@ -184,7 +226,7 @@ export function layoutRichText(
         runs.push({
           text: token.text,
           x: cursor,
-          y: lineIndex * lineHeight,
+          y: lineIndex * lineStep,
           bold: token.bold,
           italic: token.italic,
           underline: token.underline,
@@ -194,5 +236,11 @@ export function layoutRichText(
     }
   });
 
-  return runs;
+  if (height === undefined || verticalAlign === 'top' || !Number.isFinite(height)) return runs;
+  const visibleLines = lines.filter((line) => line.length > 0).length;
+  const contentHeight = Math.max(0, visibleLines - 1) * lineStep + fontSize;
+  const free = height - contentHeight;
+  if (free <= 0) return runs;
+  const offsetY = verticalAlign === 'middle' ? free / 2 : free;
+  return runs.map((run) => ({ ...run, y: run.y + offsetY }));
 }

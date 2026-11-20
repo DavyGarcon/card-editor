@@ -19,15 +19,22 @@ const MAX_STYLES = 100;
 const MAX_FIELDS_PER_STYLE = 200;
 const MAX_CARDS = 5000;
 const MAX_VALUE_LENGTH = 2_000_000;
+const MAX_DEFAULT_VALUE_LENGTH = 100_000;
+const MAX_ID_LENGTH = 200;
+const MAX_LABEL_LENGTH = 200;
+const MAX_NAME_LENGTH = 300;
 const MAX_SCRIPT_LENGTH = 20_000;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function requireString(value: unknown, path: string): string {
+function requireString(value: unknown, path: string, maxLength = MAX_ID_LENGTH): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${path} doit être une chaîne non vide.`);
+  }
+  if (value.length > maxLength) {
+    throw new Error(`${path} dépasse la longueur maximale de ${maxLength} caractères.`);
   }
   return value;
 }
@@ -66,7 +73,7 @@ function validateField(input: unknown, path: string): TemplateField {
 
   const field: TemplateField = {
     id,
-    label: requireString(input.label, `${path}.label`),
+    label: requireString(input.label, `${path}.label`, MAX_LABEL_LENGTH),
     type: type as FieldType,
     x: requireNumber(input.x, `${path}.x`, -MAX_COORDINATE, MAX_COORDINATE),
     y: requireNumber(input.y, `${path}.y`, -MAX_COORDINATE, MAX_COORDINATE),
@@ -74,6 +81,19 @@ function validateField(input: unknown, path: string): TemplateField {
     height: requireNumber(input.height, `${path}.height`, 1, MAX_DIMENSION),
   };
 
+  if (input.verticalAlign !== undefined) {
+    if (!['top', 'middle', 'bottom'].includes(String(input.verticalAlign))) {
+      throw new Error(`${path}.verticalAlign doit être top, middle ou bottom.`);
+    }
+    field.verticalAlign = input.verticalAlign as 'top' | 'middle' | 'bottom';
+  }
+  if (input.lineHeight !== undefined)
+    field.lineHeight = requireNumber(input.lineHeight, `${path}.lineHeight`, 0.5, 5);
+  if (input.letterSpacing !== undefined)
+    field.letterSpacing = requireNumber(input.letterSpacing, `${path}.letterSpacing`, -100, 100);
+  if (input.strokeWidth !== undefined)
+    field.strokeWidth = requireNumber(input.strokeWidth, `${path}.strokeWidth`, 0, 100);
+  if (input.stroke !== undefined) field.stroke = optionalString(input.stroke, `${path}.stroke`);
   if (input.z !== undefined)
     field.z = requireNumber(input.z, `${path}.z`, -MAX_COORDINATE, MAX_COORDINATE);
   if (input.zOnly !== undefined) {
@@ -87,7 +107,8 @@ function validateField(input: unknown, path: string): TemplateField {
     field.opacity = Math.min(1, Math.max(0, opacity));
   }
   if (input.defaultValue !== undefined) {
-    const defaultValue = optionalString(input.defaultValue, `${path}.defaultValue`) || '';
+    const limit = field.type === 'richtext' ? MAX_VALUE_LENGTH : MAX_DEFAULT_VALUE_LENGTH;
+    const defaultValue = requireShortString(input.defaultValue, `${path}.defaultValue`, limit);
     field.defaultValue = field.type === 'richtext' ? sanitizeRichText(defaultValue) : defaultValue;
   }
   for (const key of ['color', 'fill', 'align', 'fontFamily'] as const) {
@@ -131,7 +152,7 @@ function validateStyle(input: unknown, path: string): CardStyleDefinition {
 
   const style: CardStyleDefinition = {
     key: requireString(input.key, `${path}.key`),
-    name: requireString(input.name, `${path}.name`),
+    name: requireString(input.name, `${path}.name`, MAX_NAME_LENGTH),
     fields: input.fields.map((field, index) => validateField(field, `${path}.fields[${index}]`)),
   };
   const fieldIds = new Set<string>();
@@ -163,7 +184,7 @@ export function validateTemplatePack(input: unknown): CardTemplatePack {
   }
 
   const pack: CardTemplatePack = {
-    name: requireString(input.name, 'name'),
+    name: requireString(input.name, 'name', MAX_NAME_LENGTH),
     styles: input.styles.map((style, index) => validateStyle(style, `styles[${index}]`)),
   };
 

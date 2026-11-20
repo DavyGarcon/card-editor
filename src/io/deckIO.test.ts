@@ -1,16 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { CardStyleDefinition } from '../types/template';
-import { DECK_FORMAT, TEMPLATE_FORMAT } from './formats';
-import { TEMPLATE_STORAGE_KEY } from './templateIO';
-import {
-  clearDeckSession,
-  DeckSession,
-  DECK_STORAGE_KEY,
-  loadDeckSession,
-  parseDeckSessionJson,
-  saveDeckSession,
-  serializeDeckSession,
-} from './deckIO';
+import { DECK_FORMAT, FORMAT_VERSION, TEMPLATE_FORMAT } from './formats';
+import { DeckSession, parseDeckSessionJson, serializeDeckSession } from './deckIO';
 
 const styles: CardStyleDefinition[] = [
   {
@@ -31,13 +22,11 @@ const session: DeckSession = {
 };
 
 describe('deckIO', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
   it('serializes and parses a deck file', () => {
     const json = serializeDeckSession(session);
-    expect(JSON.parse(json).format).toBe(DECK_FORMAT);
+    const parsed = JSON.parse(json);
+    expect(parsed.format).toBe(DECK_FORMAT);
+    expect(parsed.version).toBe(FORMAT_VERSION);
     expect(parseDeckSessionJson(json, styles).cards).toEqual(session.cards);
   });
 
@@ -49,37 +38,19 @@ describe('deckIO', () => {
     expect(() => parseDeckSessionJson(json, styles)).toThrow(/absent du template/);
   });
 
+  it('remaps incompatible styles when explicitly requested', () => {
+    const json = serializeDeckSession({
+      ...session,
+      cards: [{ id: '2', styleKey: 'missing', values: {} }],
+    });
+    const parsed = parseDeckSessionJson(json, styles, { remapIncompatible: true });
+    expect(parsed.cards[0].styleKey).toBe('base');
+    expect(parsed.remappedCount).toBe(1);
+  });
+
   it('rejects a template file', () => {
     expect(() =>
       parseDeckSessionJson(JSON.stringify({ format: TEMPLATE_FORMAT, pack: {} }), styles),
     ).toThrow(/contient un template/);
-  });
-
-  it('uses its own localStorage key and ignores corrupt data', () => {
-    saveDeckSession(session);
-    expect(localStorage.getItem(DECK_STORAGE_KEY)).toBeTruthy();
-    expect(localStorage.getItem(TEMPLATE_STORAGE_KEY)).toBeNull();
-    expect(loadDeckSession(session, styles).session.cards).toEqual(session.cards);
-
-    localStorage.setItem(DECK_STORAGE_KEY, '{');
-    const failed = loadDeckSession(session, styles);
-    expect(failed.session.cards).toEqual(session.cards);
-    expect(failed.error).toMatch(/illisible/);
-    // The rejected payload must survive so the user can download it.
-    expect(localStorage.getItem('modern-geckos-deck-recovery-v1')).toBe('{');
-    clearDeckSession();
-    expect(localStorage.getItem(DECK_STORAGE_KEY)).toBeNull();
-  });
-
-  it('reports autosave failures instead of swallowing them', () => {
-    const original = Storage.prototype.setItem;
-    Storage.prototype.setItem = () => {
-      throw new Error('QuotaExceededError');
-    };
-    try {
-      expect(saveDeckSession(session)).toBe(false);
-    } finally {
-      Storage.prototype.setItem = original;
-    }
   });
 });

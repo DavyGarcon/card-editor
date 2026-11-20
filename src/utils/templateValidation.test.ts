@@ -71,6 +71,71 @@ describe('validateTemplatePack', () => {
     ).toThrow(/longueur maximale/);
   });
 
+  it('bounds names, labels and plain default values', () => {
+    expect(() => validateTemplatePack({ ...pack, name: 'a'.repeat(301) })).toThrow(
+      /longueur maximale/,
+    );
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          {
+            ...pack.styles[0],
+            fields: [{ ...pack.styles[0].fields[0], label: 'a'.repeat(201) }],
+          },
+        ],
+      }),
+    ).toThrow(/longueur maximale/);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          {
+            ...pack.styles[0],
+            fields: [
+              { ...pack.styles[0].fields[0], type: 'text', defaultValue: 'a'.repeat(100001) },
+            ],
+          },
+        ],
+      }),
+    ).toThrow(/longueur maximale/);
+  });
+
+  it('validates the new typography properties', () => {
+    const baseField = pack.styles[0].fields[0];
+    expect(
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          {
+            ...pack.styles[0],
+            fields: [
+              {
+                ...baseField,
+                verticalAlign: 'middle',
+                lineHeight: 1.4,
+                letterSpacing: 0.5,
+                stroke: '#000',
+                strokeWidth: 1,
+              },
+            ],
+          },
+        ],
+      }).styles[0].fields[0].verticalAlign,
+    ).toBe('middle');
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          {
+            ...pack.styles[0],
+            fields: [{ ...baseField, verticalAlign: 'sideways' }],
+          },
+        ],
+      }),
+    ).toThrow(/top, middle ou bottom/);
+  });
+
   it('sanitizes rich text HTML', () => {
     const result = validateTemplatePack({
       ...pack,

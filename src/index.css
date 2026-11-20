@@ -1,7 +1,35 @@
+/* Shared design tokens: change a colour here to update it everywhere. */
+:root {
+  --color-bg: #0f172a;
+  --color-bg-deep: #020617;
+  --color-surface: #1e293b;
+  --color-surface-raised: #334155;
+  --color-border: #1e293b;
+  --color-border-raised: #334155;
+  --color-text: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-text-subtle: #64748b;
+  --color-accent: #f59e0b;
+  --color-danger: #7f1d1d;
+  --color-danger-text: #fecaca;
+}
+
 /* Visible keyboard focus everywhere, including custom controls. */
 :focus-visible {
-  outline: 2px solid #f59e0b;
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+.zoom-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.zoom-toolbar .io-button {
+  padding: 5px 8px;
 }
 
 /* Details on the left (stacked), card/template preview on the right. */
@@ -11,8 +39,8 @@
   grid-template-rows: minmax(0, auto) minmax(0, 1fr);
   height: 100vh;
   font-family: system-ui, sans-serif;
-  background: #0f172a;
-  color: #f8fafc;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 .sidebar-left {
@@ -20,7 +48,7 @@
   grid-row: 1;
   min-height: 0;
   max-height: 45vh;
-  border-right: 1px solid #1e293b;
+  border-right: 1px solid var(--color-surface);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -32,8 +60,8 @@
   grid-column: 1;
   grid-row: 2;
   min-height: 0;
-  border-right: 1px solid #1e293b;
-  border-top: 1px solid #1e293b;
+  border-right: 1px solid var(--color-surface);
+  border-top: 1px solid var(--color-surface);
   padding: 16px 20px;
   overflow-y: auto;
 }
@@ -48,7 +76,7 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  background: #020617;
+  background: var(--color-bg-deep);
   overflow: auto;
   padding: 16px;
 }
@@ -72,7 +100,7 @@
   .sidebar-left,
   .sidebar-right {
     border-right: none;
-    border-top: 1px solid #1e293b;
+    border-top: 1px solid var(--color-surface);
     overflow: visible;
   }
 
@@ -110,7 +138,7 @@
   align-items: center;
   flex-wrap: wrap;
   padding: 6px 8px;
-  border: 1px solid #1e293b;
+  border: 1px solid var(--color-surface);
   border-radius: 8px;
 }
 
@@ -118,7 +146,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .io-button,
@@ -128,21 +156,21 @@
   gap: 6px;
   padding: 7px 10px;
   border-radius: 6px;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #f8fafc;
+  border: 1px solid var(--color-surface-raised);
+  background: var(--color-surface);
+  color: var(--color-text);
   font-size: 12px;
   cursor: pointer;
 }
 
 .io-button:hover,
 .io-load-label:hover {
-  background: #334155;
+  background: var(--color-surface-raised);
 }
 
 .rich-text-editor-content:empty::before {
   content: attr(data-placeholder);
-  color: #94a3b8;
+  color: var(--color-text-muted);
   pointer-events: none;
 }
 

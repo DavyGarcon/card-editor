@@ -2,9 +2,6 @@ import { CardData, CardStyleDefinition } from '../types/template';
 import { validateDeck } from '../utils/templateValidation';
 import { downloadJsonFile, jsonFileName, readTextFile } from './fileIO';
 import { DECK_FORMAT, FORMAT_VERSION, isObject, TEMPLATE_FORMAT } from './formats';
-import { storeRecovery } from './recovery';
-
-export const DECK_STORAGE_KEY = 'modern-geckos-deck-v1';
 
 export interface DeckSession {
   cards: CardData[];
@@ -12,6 +9,13 @@ export interface DeckSession {
   name?: string;
   templateName?: string;
   styleKeys?: string[];
+  /** Cards whose style key was remapped to a style present in the current template. */
+  remappedCount?: number;
+}
+
+export interface ParseDeckOptions {
+  /** Remap cards using unknown styles instead of rejecting the whole deck. */
+  remapIncompatible?: boolean;
 }
 
 function rejectOtherFormat(parsed: unknown): void {
@@ -24,7 +28,11 @@ function rejectOtherFormat(parsed: unknown): void {
   }
 }
 
-export function parseDeckSessionJson(json: string, styles: CardStyleDefinition[]): DeckSession {
+export function parseDeckSessionJson(
+  json: string,
+  styles: CardStyleDefinition[],
+  options: ParseDeckOptions = {},
+): DeckSession {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -36,12 +44,17 @@ export function parseDeckSessionJson(json: string, styles: CardStyleDefinition[]
   const wrapper = isObject(parsed) ? parsed : {};
   const cards = validateDeck(parsed, styles);
   const availableKeys = new Set(styles.map((style) => style.key));
+  const fallbackKey = styles[0]?.key ?? '';
+  let remappedCount = 0;
   for (const card of cards) {
-    if (!availableKeys.has(card.styleKey)) {
+    if (availableKeys.has(card.styleKey)) continue;
+    if (!options.remapIncompatible) {
       throw new Error(
         `La carte "${card.values.title || card.id}" utilise le style "${card.styleKey}" absent du template chargé. Chargez d'abord le template correspondant.`,
       );
     }
+    card.styleKey = fallbackKey;
+    remappedCount++;
   }
 
   const candidateId =
@@ -55,6 +68,7 @@ export function parseDeckSessionJson(json: string, styles: CardStyleDefinition[]
     styleKeys: Array.isArray(rawTemplate.styleKeys)
       ? rawTemplate.styleKeys.filter((key): key is string => typeof key === 'string')
       : undefined,
+    remappedCount,
   };
 }
 
@@ -79,59 +93,12 @@ export function serializeDeckSession(session: DeckSession): string {
 export async function loadDeckFile(
   file: File,
   styles: CardStyleDefinition[],
+  options: ParseDeckOptions = {},
 ): Promise<DeckSession> {
-  return parseDeckSessionJson(await readTextFile(file), styles);
+  return parseDeckSessionJson(await readTextFile(file), styles, options);
 }
 
 export function saveDeckFile(session: DeckSession): void {
   const name = session.name || session.templateName || 'deck';
   downloadJsonFile(jsonFileName(name, 'deck'), serializeDeckSession(session));
-}
-
-export interface DeckLoadResult {
-  session: DeckSession;
-  error?: string;
-}
-
-export function loadDeckSession(
-  fallback: DeckSession,
-  styles: CardStyleDefinition[],
-): DeckLoadResult {
-  try {
-    const raw = localStorage.getItem(DECK_STORAGE_KEY);
-    if (!raw) return { session: fallback };
-    return { session: parseDeckSessionJson(raw, styles) };
-  } catch (err) {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(DECK_STORAGE_KEY);
-    } catch {
-      // Storage is unavailable entirely.
-    }
-    if (raw) storeRecovery('deck', raw);
-    return {
-      session: fallback,
-      error: `Sauvegarde du deck illisible : ${
-        err instanceof Error ? err.message : 'erreur inconnue'
-      }. Une copie de récupération a été conservée.`,
-    };
-  }
-}
-
-/** Returns false when storage is full/disabled so the UI can warn the user. */
-export function saveDeckSession(session: DeckSession): boolean {
-  try {
-    localStorage.setItem(DECK_STORAGE_KEY, serializeDeckSession(session));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function clearDeckSession(): void {
-  try {
-    localStorage.removeItem(DECK_STORAGE_KEY);
-  } catch {
-    // Ignore.
-  }
 }

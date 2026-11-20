@@ -1,5 +1,5 @@
 {
-  "name": "modern-geckos",
+  "name": "card-editor",
   "private": true,
   "version": "0.4.0",
   "type": "module",
@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{json,ts,md}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{json,ts,md}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{json,ts,md}\"",
+    "check": "npm run lint && npm run format:check && npm test && npm run build"
   },
   "dependencies": {
     "dompurify": "^3.4.18",

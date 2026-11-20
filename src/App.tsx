@@ -10,6 +10,11 @@ import {
   ColorPicker,
   DeckIOControls,
   TemplateIOControls,
+  ErrorBanner,
+  ZoomToolbar,
+  ScriptHelpPanel,
+  PdfOptionsDialog,
+  type PdfPrintOptions,
 } from './components';
 import {
   Download,
@@ -24,13 +29,20 @@ import {
   List,
   Image as ImageIcon,
   GitBranch,
-  AlertCircle,
+  Copy,
 } from 'lucide-react';
-import { CardStyleDefinition, FieldType, SelectOption, TemplateField } from './types/template';
+import {
+  CardStyleDefinition,
+  CardTemplatePack,
+  FieldType,
+  SelectOption,
+  TemplateField,
+} from './types/template';
 import { resolveCardStyle } from './utils/styleResolver';
 import { evaluateFieldScript } from './utils/scriptEvaluator';
 import { DraggableFieldNode } from './components/DraggableFieldNode';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { inputStyle, labelStyle, smallBtnStyle, toolBtnStyle } from './components/uiStyles';
 import { Line } from 'react-konva';
 import {
   getLineGuideStops,
@@ -38,54 +50,57 @@ import {
   getGuides,
   GuideLineRender,
 } from './utils/snapGuides';
-import { Printer, Undo2, Redo2, RotateCcw } from 'lucide-react';
+import { Printer, RotateCcw } from 'lucide-react';
 import { exportDeckToPdf } from './utils/pdfExporter';
 import { renderCardToDataUrl } from './utils/cardRenderer';
-import {
-  clearTemplateSession,
-  loadTemplateFile,
-  loadTemplateSession,
-  saveTemplateFile,
-  type TemplateSession,
-} from './io/templateIO';
-import {
-  clearDeckSession,
-  loadDeckFile,
-  loadDeckSession,
-  saveDeckFile,
-  type DeckSession,
-} from './io/deckIO';
-import { clearRecovery, downloadRecovery, type SessionKind } from './io/recovery';
+import { loadTemplateFile, saveTemplateFile, type TemplateSession } from './io/templateIO';
+import { loadDeckFile, saveDeckFile, type DeckSession } from './io/deckIO';
+import { isImageRef, pruneImages, storeImageDataUrl } from './io/imageStore';
+import { slugify } from './io/formats';
 import { useUndoableDocument } from './hooks/useUndoableDocument';
-import { useAutosave } from './hooks/useAutosave';
-import { INITIAL_CARDS, INITIAL_PACK } from './data/starterPack';
+import { BUILT_IN_TEMPLATES, EMPTY_PACK } from './data';
+import { STRINGS } from './i18n/strings';
+import { clampNumber } from './utils/numbers';
 
-/** Numeric inputs can transiently be empty or non-finite; keep documents valid. */
-function clampNumber(raw: string, fallback: number, min: number, max: number): number {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.min(max, Math.max(min, value));
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 2;
+
+/** Applies a field edit to the active style, creating a local override if needed. */
+function applyFieldUpdates(
+  pack: CardTemplatePack,
+  styleKey: string,
+  resolvedFields: TemplateField[],
+  fieldId: string,
+  updates: Partial<TemplateField>,
+): CardTemplatePack {
+  const hasNonZUpdate = Object.keys(updates).some((key) => key !== 'z' && key !== 'zOnly');
+  const effectiveUpdates =
+    hasNonZUpdate && updates.zOnly !== false ? { ...updates, zOnly: false } : updates;
+  return {
+    ...pack,
+    styles: pack.styles.map((style) => {
+      if (style.key !== styleKey) return style;
+      const existsLocally = style.fields.some((field) => field.id === fieldId);
+      if (existsLocally) {
+        return {
+          ...style,
+          fields: style.fields.map((field) =>
+            field.id === fieldId ? { ...field, ...effectiveUpdates } : field,
+          ),
+        };
+      }
+      const baseField = resolvedFields.find((field) => field.id === fieldId);
+      if (!baseField) return style;
+      return { ...style, fields: [...style.fields, { ...baseField, ...effectiveUpdates }] };
+    }),
+  };
 }
 
 export default function App() {
-  const savedTemplate = useMemo(
-    () =>
-      loadTemplateSession({
-        pack: INITIAL_PACK,
-        activeStyleKey: INITIAL_PACK.activeStyleKey || 'spell_fire',
-        mode: 'card',
-      }),
-    [],
-  );
-  const savedDeck = useMemo(
-    () =>
-      loadDeckSession(
-        { cards: INITIAL_CARDS, activeCardId: INITIAL_CARDS[0]?.id },
-        INITIAL_PACK.styles,
-      ),
-    [],
-  );
-  const initialError = savedTemplate.error ?? savedDeck.error ?? null;
+  // Startup and refresh always use the packs shipped in src/data. Decks are
+  // never restored: they only exist after the user loads one explicitly.
+  const initialTemplate = BUILT_IN_TEMPLATES[0]?.pack ?? EMPTY_PACK;
   const {
     pack,
     setPack,
@@ -101,21 +116,23 @@ export default function App() {
     resetDocument,
     undo,
     redo,
-    canUndo,
-    canRedo,
   } = useUndoableDocument({
-    pack: savedTemplate.session.pack,
-    cards: savedDeck.session.cards,
-    activeStyleKey: savedTemplate.session.activeStyleKey,
-    activeCardId: savedDeck.session.activeCardId,
+    pack: structuredClone(initialTemplate),
+    cards: [],
+    activeStyleKey: initialTemplate.activeStyleKey || initialTemplate.styles[0]?.key || '',
+    activeCardId: '',
     selectedFieldId: 'title',
-    mode: savedTemplate.session.mode,
+    mode: 'card',
   });
-  const [errorBanner, setErrorBanner] = useState<string | null>(initialError);
-  const [recoveryKind, setRecoveryKind] = useState<SessionKind | null>(
-    savedTemplate.error ? 'template' : savedDeck.error ? 'deck' : null,
-  );
+  const [activeTemplateId, setActiveTemplateId] = useState(BUILT_IN_TEMPLATES[0]?.id ?? '');
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [dismissedStyleError, setDismissedStyleError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [showScriptHelp, setShowScriptHelp] = useState(false);
+  const [fieldIdDraftState, setFieldIdDraftState] = useState<{ id: string; value: string }>({
+    id: '',
+    value: '',
+  });
   const [draggedComponentId, setDraggedComponentId] = useState<string | null>(null);
   const [scriptErrors, setScriptErrors] = useState<Record<string, string>>({});
   const [boundaryKey, setBoundaryKey] = useState(0);
@@ -126,6 +143,23 @@ export default function App() {
     target: { kind: 'card' | 'field'; id: string; fieldId?: string };
   } | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      setZoom((previous) => {
+        const factor = event.deltaY < 0 ? 1.1 : 0.9;
+        const next = previous * factor;
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(next * 100) / 100));
+      });
+    };
+    viewport.addEventListener('wheel', onWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', onWheel);
+  }, []);
 
   const activeCard = cards.find((c) => c.id === activeCardId) || cards[0];
   // One style selection for both modes: choosing a card selects its style, and
@@ -160,6 +194,19 @@ export default function App() {
     }
   }, [currentStyleKey, pack.styles]);
   const resolvedStyle = styleResolution.style;
+
+  const fitToView = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || viewport.clientWidth <= 0 || viewport.clientHeight <= 0) return;
+    const availableWidth = Math.max(1, viewport.clientWidth - 64);
+    const availableHeight = Math.max(1, viewport.clientHeight - 190);
+    const fitted = Math.min(
+      availableWidth / resolvedStyle.width,
+      availableHeight / resolvedStyle.height,
+    );
+    setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(Math.min(1, fitted) * 100) / 100)));
+  }, [resolvedStyle.width, resolvedStyle.height]);
+
   // Template mode previews the template's defaults, not the active card's data.
   const previewCardValues = useMemo(
     () =>
@@ -187,13 +234,41 @@ export default function App() {
     }),
     [cards, activeCardId, pack],
   );
-  // Two independent slots; failures are reported instead of silently ignored.
-  const { status: saveStatus, saveNow: flushSave } = useAutosave(templateSession, deckSession);
-
-  const showError = useCallback((message: string | null, kind?: SessionKind) => {
+  const showError = useCallback((message: string | null) => {
     setErrorBanner(message);
-    setRecoveryKind(kind ?? null);
   }, []);
+
+  /** Switch between the built-in packs in src/data; cards stay in the session. */
+  const selectBuiltInTemplate = useCallback(
+    (templateId: string) => {
+      const template = BUILT_IN_TEMPLATES.find((item) => item.id === templateId);
+      if (!template) return;
+      const nextPack = structuredClone(template.pack);
+      const availableKeys = new Set(nextPack.styles.map((style) => style.key));
+      const fallbackKey =
+        nextPack.activeStyleKey && availableKeys.has(nextPack.activeStyleKey)
+          ? nextPack.activeStyleKey
+          : (nextPack.styles[0]?.key ?? '');
+      const incompatibleCount = cards.filter((card) => !availableKeys.has(card.styleKey)).length;
+      setDocument({
+        pack: nextPack,
+        cards: cards.map((card) =>
+          availableKeys.has(card.styleKey) ? card : { ...card, styleKey: fallbackKey },
+        ),
+        activeStyleKey: fallbackKey,
+        activeCardId,
+        selectedFieldId,
+        mode,
+      });
+      setActiveTemplateId(templateId);
+      showError(
+        incompatibleCount > 0
+          ? `${incompatibleCount} carte(s) ont été réassignée(s) au style « ${fallbackKey} » (style absent du nouveau template).`
+          : null,
+      );
+    },
+    [cards, activeCardId, selectedFieldId, mode, setDocument, showError],
+  );
 
   const templateFontNames = useMemo(
     () =>
@@ -220,11 +295,34 @@ export default function App() {
 
   const rawActiveStyle = pack.styles.find((s) => s.key === currentStyleKey) || pack.styles[0];
   const selectedField = resolvedStyle.fields.find((f) => f.id === selectedFieldId) || null;
+  const selectedFieldIdKey = selectedField?.id ?? '';
+  // Draft is scoped to the selected field, so switching layers never leaks text.
+  const fieldIdDraft =
+    fieldIdDraftState.id === selectedFieldIdKey ? fieldIdDraftState.value : selectedFieldIdKey;
+  const setFieldIdDraft = (value: string) =>
+    setFieldIdDraftState({ id: selectedFieldIdKey, value });
+
   const isFieldInheritedOnly = Boolean(
     selectedField &&
     rawActiveStyle?.basedOn &&
     !rawActiveStyle.fields.some((f) => f.id === selectedField.id),
   );
+
+  // A style cannot inherit from one of its own descendants (that would create
+  // an inheritance cycle the resolver cannot untangle).
+  const descendantStyleKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const collect = (parentKey: string) => {
+      for (const style of pack.styles) {
+        if (style.basedOn === parentKey && !keys.has(style.key)) {
+          keys.add(style.key);
+          collect(style.key);
+        }
+      }
+    };
+    collect(currentStyleKey);
+    return keys;
+  }, [pack.styles, currentStyleKey]);
 
   const handleScriptError = useCallback((fieldId: string, error: string | null) => {
     setScriptErrors((prev) => {
@@ -398,52 +496,68 @@ export default function App() {
     });
   };
 
-  const reorderComponentsByDrop = (targetFieldId: string) => {
-    if (mode !== 'template' || !draggedComponentId || draggedComponentId === targetFieldId) return;
-
-    const displayOrderIds = [...resolvedStyle.fields]
+  const getFieldDisplayOrder = () =>
+    [...resolvedStyle.fields]
       .map((field, index) => ({ field, index }))
       .sort((a, b) => (b.field.z ?? b.index) - (a.field.z ?? a.index) || b.index - a.index)
       .map(({ field }) => field.id);
 
-    const fromIndex = displayOrderIds.indexOf(draggedComponentId);
-    const toIndex = displayOrderIds.indexOf(targetFieldId);
-    if (fromIndex < 0 || toIndex < 0) return;
-
-    const nextOrderIds = [...displayOrderIds];
-    nextOrderIds.splice(fromIndex, 1);
-    nextOrderIds.splice(toIndex, 0, draggedComponentId);
-
-    const zById = new Map<string, number>();
-    nextOrderIds.forEach((id, displayIdx) => {
-      zById.set(id, nextOrderIds.length - 1 - displayIdx);
-    });
+  /** Writes z overrides only for fields whose effective order changed. */
+  const commitFieldOrder = (oldOrderIds: string[], nextOrderIds: string[]) => {
+    const zById = new Map(
+      nextOrderIds.map((id, displayIdx) => [id, nextOrderIds.length - 1 - displayIdx]),
+    );
+    const previousZById = new Map(
+      oldOrderIds.map((id, displayIdx) => [id, oldOrderIds.length - 1 - displayIdx]),
+    );
 
     setPack((prev) => ({
       ...prev,
-      styles: prev.styles.map((s) => {
-        if (s.key !== currentStyleKey) return s;
-
-        let fields = [...s.fields];
+      styles: prev.styles.map((style) => {
+        if (style.key !== currentStyleKey) return style;
+        let fields = [...style.fields];
         for (const [id, z] of zById.entries()) {
-          const existsLocally = fields.some((f) => f.id === id);
+          if (previousZById.get(id) === z) continue;
+          const existsLocally = fields.some((field) => field.id === id);
           if (existsLocally) {
-            fields = fields.map((f) => (f.id === id ? { ...f, z } : f));
+            fields = fields.map((field) => (field.id === id ? { ...field, z } : field));
           } else {
-            const baseField = resolvedStyle.fields.find((f) => f.id === id);
+            const baseField = resolvedStyle.fields.find((field) => field.id === id);
             if (baseField) {
-              // Inherited field: keep the rest of the parent definition and
-              // override only the stacking order.
+              // Inherited field: keep the parent definition and override only z.
               fields = [...fields, { ...baseField, z, zOnly: true }];
             }
           }
         }
-
-        return { ...s, fields };
+        return { ...style, fields };
       }),
     }));
+  };
 
+  const reorderComponentsByDrop = (targetFieldId: string) => {
+    if (mode !== 'template' || !draggedComponentId || draggedComponentId === targetFieldId) return;
+    const order = getFieldDisplayOrder();
+    const fromIndex = order.indexOf(draggedComponentId);
+    const toIndex = order.indexOf(targetFieldId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const next = [...order];
+    next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, draggedComponentId);
+    commitFieldOrder(order, next);
     setDraggedComponentId(null);
+  };
+
+  /** Alt+Arrow reorders the focused layer without a mouse. */
+  const reorderFieldByStep = (fieldId: string, direction: -1 | 1) => {
+    if (mode !== 'template') return;
+    const order = getFieldDisplayOrder();
+    const from = order.indexOf(fieldId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    const next = [...order];
+    next.splice(from, 1);
+    next.splice(to, 0, fieldId);
+    commitFieldOrder(order, next);
   };
 
   // --- Select Options Editor Helpers ---
@@ -467,8 +581,28 @@ export default function App() {
   };
 
   const removeSelectOption = (field: TemplateField, idx: number) => {
+    const removedValue = (field.options || [])[idx]?.value;
     const nextOptions = (field.options || []).filter((_, i) => i !== idx);
-    updateFieldProps(field.id, { options: nextOptions });
+    const fieldUpdates: Partial<TemplateField> = { options: nextOptions };
+    if (removedValue !== undefined && field.defaultValue === removedValue) {
+      fieldUpdates.defaultValue = '';
+    }
+    // A removed option must not leave stale values in any card: remap them in
+    // the same history step as the option removal.
+    const nextCards =
+      removedValue === undefined
+        ? cards
+        : cards.map((card) => {
+            if (card.values[field.id] !== removedValue) return card;
+            const values = { ...card.values };
+            delete values[field.id];
+            return { ...card, values };
+          });
+    setDocument({
+      ...snapshot(),
+      pack: applyFieldUpdates(pack, currentStyleKey, resolvedStyle.fields, field.id, fieldUpdates),
+      cards: nextCards,
+    });
   };
 
   // --- Card Values & Image Upload ---
@@ -487,6 +621,14 @@ export default function App() {
     aspectRatio: number,
     target: { kind: 'card' | 'field'; id: string; fieldId?: string },
   ) => {
+    if (!file.type.startsWith('image/')) {
+      showError('Veuillez choisir un fichier image (PNG, JPEG, WebP…).');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      showError(`Image trop volumineuse (${MAX_IMAGE_BYTES / 1024 / 1024} Mo maximum).`);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
@@ -495,6 +637,22 @@ export default function App() {
     };
     reader.onerror = () => showError('Impossible de lire le fichier image.');
     reader.readAsDataURL(file);
+  };
+
+  /** Stores cropped artwork in IndexedDB and keeps only a short ref in the document. */
+  const commitCroppedImage = (dataUrl: string) => {
+    const target = cropRequest?.target;
+    if (!target) return;
+    void storeImageDataUrl(dataUrl)
+      .then((ref) => {
+        if (target.kind === 'card' && target.fieldId) {
+          updateCardValue(target.fieldId, ref);
+        } else {
+          updateFieldProps(target.id, { defaultValue: ref });
+        }
+      })
+      .catch(() => showError("Impossible d'enregistrer l'image."))
+      .finally(() => setCropRequest(null));
   };
 
   const handleCardImageUpload = (field: TemplateField, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -520,13 +678,97 @@ export default function App() {
     });
   };
 
+  const duplicateCard = () => {
+    if (!activeCard) return;
+    const newId = `card_${Date.now()}`;
+    const copy = { ...activeCard, id: newId, values: { ...activeCard.values } };
+    const insertAt = cards.findIndex((card) => card.id === activeCard.id) + 1;
+    const nextCards = [...cards];
+    nextCards.splice(insertAt, 0, copy);
+    setDocument({ ...snapshot(), cards: nextCards, activeCardId: newId });
+  };
+
+  const deleteCard = (cardId: string) => {
+    const remaining = cards.filter((card) => card.id !== cardId);
+    // Deleting the selected card must leave a valid selection.
+    setDocument({
+      ...snapshot(),
+      cards: remaining,
+      activeCardId: activeCardId === cardId ? (remaining[0]?.id ?? '') : activeCardId,
+      activeStyleKey:
+        activeCardId === cardId ? (remaining[0]?.styleKey ?? activeStyleKey) : activeStyleKey,
+    });
+    // Drop artwork blobs that are no longer used by any card or field.
+    const activeRefs = new Set<string>();
+    for (const style of pack.styles) {
+      for (const field of style.fields) {
+        if (isImageRef(field.defaultValue)) activeRefs.add(field.defaultValue!);
+      }
+    }
+    for (const card of remaining) {
+      for (const value of Object.values(card.values)) {
+        if (isImageRef(value)) activeRefs.add(value);
+      }
+    }
+    void pruneImages(activeRefs);
+  };
+
+  const duplicateStyle = () => {
+    if (!rawActiveStyle) return;
+    const newKey = `style_${Date.now()}`;
+    const copy: CardStyleDefinition = {
+      ...rawActiveStyle,
+      key: newKey,
+      name: `${rawActiveStyle.name} (Copie)`,
+      fields: rawActiveStyle.fields.map((field) => ({ ...field })),
+    };
+    setDocument({
+      ...snapshot(),
+      pack: { ...pack, styles: [...pack.styles, copy] },
+      activeStyleKey: newKey,
+      cards: activeCard
+        ? cards.map((card) => (card.id === activeCard.id ? { ...card, styleKey: newKey } : card))
+        : cards,
+    });
+  };
+
+  /** Renaming a field id updates every card value and selection in one step. */
+  const renameFieldId = (oldId: string, rawNewId: string) => {
+    const newId = rawNewId.trim().replace(/[^A-Za-z0-9_-]+/g, '_');
+    if (!newId || newId === oldId) return;
+    if (pack.styles.some((style) => style.fields.some((field) => field.id === newId))) {
+      showError(`L'identifiant « ${newId} » est déjà utilisé.`);
+      return;
+    }
+    setDocument({
+      ...snapshot(),
+      pack: {
+        ...pack,
+        styles: pack.styles.map((style) => ({
+          ...style,
+          fields: style.fields.map((field) =>
+            field.id === oldId ? { ...field, id: newId } : field,
+          ),
+        })),
+      },
+      cards: cards.map((card) => {
+        if (!(oldId in card.values)) return card;
+        const values = { ...card.values };
+        values[newId] = values[oldId];
+        delete values[oldId];
+        return { ...card, values };
+      }),
+      selectedFieldId: selectedFieldId === oldId ? newId : selectedFieldId,
+    });
+  };
+
   // --- Export / Import ---
   const exportPNG = async () => {
     if (!activeCard) return;
     try {
       const uri = await renderCardToDataUrl(activeCard, resolvedStyle, 2);
       const link = document.createElement('a');
-      link.download = `${activeCard.values.title || 'carte'}.png`;
+      link.download = `${slugify(activeCard.values.title || 'carte')}.png`;
       link.href = uri;
       link.click();
     } catch (err) {
@@ -593,12 +835,10 @@ export default function App() {
   const loadDeck = useCallback(
     async (file: File) => {
       try {
-        const session = await loadDeckFile(file, pack.styles);
+        const session = await loadDeckFile(file, pack.styles, { remapIncompatible: true });
         const availableKeys = new Set(pack.styles.map((s) => s.key));
         const fallbackKey = currentStyleKey;
-        const incompatibleCount = session.cards.filter(
-          (c) => !availableKeys.has(c.styleKey),
-        ).length;
+        const incompatibleCount = session.remappedCount ?? 0;
         const remappedCards = session.cards.map((c) =>
           availableKeys.has(c.styleKey) ? c : { ...c, styleKey: fallbackKey },
         );
@@ -624,21 +864,19 @@ export default function App() {
     [pack.styles, currentStyleKey, snapshot, setDocument, showError],
   );
 
-  const resetProject = () => {
-    clearTemplateSession();
-    clearDeckSession();
-    clearRecovery('template');
-    clearRecovery('deck');
-    // Hard reset also empties the undo timeline: old sessions must not be
-    // resurrected by Ctrl+Z after an explicit "Réinitialiser".
+  const resetWorkspace = () => {
+    // Hard reset empties the undo timeline and returns to the same state as a
+    // fresh launch: built-in template, no deck.
+    const template = BUILT_IN_TEMPLATES[0]?.pack ?? EMPTY_PACK;
     resetDocument({
-      pack: INITIAL_PACK,
-      cards: INITIAL_CARDS,
-      activeStyleKey: INITIAL_PACK.activeStyleKey || 'spell_fire',
-      activeCardId: INITIAL_CARDS[0]?.id ?? '',
+      pack: structuredClone(template),
+      cards: [],
+      activeStyleKey: template.activeStyleKey || template.styles[0]?.key || '',
+      activeCardId: '',
       selectedFieldId: 'title',
       mode: 'card',
     });
+    setActiveTemplateId(BUILT_IN_TEMPLATES[0]?.id ?? '');
     setDismissedStyleError(null);
     setScriptErrors({});
     setGuides([]);
@@ -695,6 +933,13 @@ export default function App() {
   };
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [showPdfOptions, setShowPdfOptions] = useState(false);
+  const [pdfOptions, setPdfOptions] = useState<PdfPrintOptions>({
+    paperSize: 'a4',
+    cardWidthMm: 63.5,
+    gapMm: 2,
+    drawCropMarks: true,
+  });
 
   const handleExportDeckPdf = async () => {
     if (cards.length === 0) return;
@@ -712,10 +957,8 @@ export default function App() {
       }
 
       await exportDeckToPdf(capturedImages, ratios, {
-        cardWidthMm: 63.5,
-        gapMm: 2,
-        drawCropMarks: true,
-        filename: `${pack.name.toLowerCase().replace(/\s+/g, '-')}-planche-a4.pdf`,
+        ...pdfOptions,
+        filename: `${slugify(pack.name)}-planche-${pdfOptions.paperSize}.pdf`,
       });
     } catch (err) {
       showError(err instanceof Error ? err.message : "Erreur lors de l'export PDF.");
@@ -734,6 +977,34 @@ export default function App() {
       ) {
         return;
       }
+
+      // Template mode: nudge the selected layer with the arrow keys.
+      if (
+        mode === 'template' &&
+        selectedFieldId &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        const deltas: Record<string, [number, number]> = {
+          ArrowLeft: [-1, 0],
+          ArrowRight: [1, 0],
+          ArrowUp: [0, -1],
+          ArrowDown: [0, 1],
+        };
+        const delta = deltas[event.key];
+        const field = delta ? resolvedStyle.fields.find((f) => f.id === selectedFieldId) : null;
+        if (delta && field) {
+          event.preventDefault();
+          const step = event.shiftKey ? 10 : 1;
+          updateFieldProps(selectedFieldId, {
+            x: field.x + delta[0] * step,
+            y: field.y + delta[1] * step,
+          });
+          return;
+        }
+      }
+
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === 'z') {
@@ -752,7 +1023,9 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [undo, redo, saveTemplate, saveDeck, mode]);
+    // updateFieldProps is intentionally read from the render closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undo, redo, saveTemplate, saveDeck, mode, selectedFieldId, resolvedStyle.fields]);
 
   return (
     <div className="app-shell">
@@ -767,28 +1040,7 @@ export default function App() {
             fontSize: '18px',
           }}
         >
-          <Layers size={20} color="#f59e0b" /> Modern Geckos
-        </div>
-
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            onClick={undo}
-            disabled={!canUndo}
-            title="Annuler (Ctrl+Z)"
-            aria-label="Annuler"
-            style={{ ...smallBtnStyle, flex: 1, opacity: canUndo ? 1 : 0.4 }}
-          >
-            <Undo2 size={14} /> Annuler
-          </button>
-          <button
-            onClick={redo}
-            disabled={!canRedo}
-            title="Rétablir (Ctrl+Maj+Z)"
-            aria-label="Rétablir"
-            style={{ ...smallBtnStyle, flex: 1, opacity: canRedo ? 1 : 0.4 }}
-          >
-            <Redo2 size={14} /> Rétablir
-          </button>
+          <Layers size={20} color="#f59e0b" /> Card Editor
         </div>
 
         {/* Mode Toggle */}
@@ -838,6 +1090,26 @@ export default function App() {
             <LayoutTemplate size={14} /> Template
           </button>
         </div>
+
+        {/* Built-in templates discovered from src/data. No deck is loaded here. */}
+        <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          Templates intégrés
+          <select
+            aria-label="Template intégré"
+            value={activeTemplateId}
+            onChange={(event) => selectBuiltInTemplate(event.target.value)}
+            style={inputStyle}
+          >
+            {BUILT_IN_TEMPLATES.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.pack.name}
+              </option>
+            ))}
+            {!BUILT_IN_TEMPLATES.some((template) => template.id === activeTemplateId) && (
+              <option value={activeTemplateId}>Template chargé depuis un fichier</option>
+            )}
+          </select>
+        </label>
 
         {/* Style & Inheritance Switcher */}
         <div
@@ -897,6 +1169,13 @@ export default function App() {
               <button onClick={() => createStyleVariant(false)} style={smallBtnStyle}>
                 + Nouveau Style
               </button>
+              <button
+                onClick={duplicateStyle}
+                style={{ ...smallBtnStyle, gridColumn: '1 / -1' }}
+                title={STRINGS.duplicateStyle}
+              >
+                <Copy size={12} /> {STRINGS.duplicateStyle}
+              </button>
             </div>
           )}
         </div>
@@ -904,23 +1183,45 @@ export default function App() {
         {/* Card mode: deck management is hidden while editing the template. */}
         {mode === 'card' && (
           <>
-            <button
-              onClick={addNewCard}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                padding: '8px',
-                background: '#334155',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}
-            >
-              <Plus size={16} /> Ajouter une Carte
-            </button>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                onClick={addNewCard}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '8px',
+                  background: '#334155',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  flex: 1,
+                }}
+              >
+                <Plus size={16} /> Ajouter une Carte
+              </button>
+              <button
+                onClick={duplicateCard}
+                disabled={!activeCard}
+                title={STRINGS.duplicateCard}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '8px',
+                  background: '#334155',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                }}
+              >
+                <Copy size={16} /> Dupliquer
+              </button>
+            </div>
 
             <div
               style={{
@@ -956,18 +1257,7 @@ export default function App() {
                       size={16}
                       onClick={(e) => {
                         e.stopPropagation();
-                        const remaining = cards.filter((item) => item.id !== c.id);
-                        // Deleting the selected card must leave a valid selection.
-                        setDocument({
-                          ...snapshot(),
-                          cards: remaining,
-                          activeCardId:
-                            activeCardId === c.id ? (remaining[0]?.id ?? '') : activeCardId,
-                          activeStyleKey:
-                            activeCardId === c.id
-                              ? (remaining[0]?.styleKey ?? activeStyleKey)
-                              : activeStyleKey,
-                        });
+                        deleteCard(c.id);
                       }}
                     />
                   )}
@@ -979,70 +1269,38 @@ export default function App() {
       </div>
 
       {/* RIGHT: Interactive Konva Stage (card / template preview) */}
-      <div className="stage-area">
+      <div className="stage-area" ref={viewportRef}>
         {bannerMessage && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: '#7f1d1d',
-              color: '#fecaca',
-              padding: '8px 14px',
-              borderRadius: '6px',
-              fontSize: '13px',
+          <ErrorBanner
+            message={bannerMessage}
+            onDismiss={() => {
+              showError(null);
+              if (styleResolution.error) setDismissedStyleError(styleResolution.error);
             }}
-          >
-            <AlertCircle size={16} />
-            <span style={{ flex: 1 }}>{bannerMessage}</span>
-            {recoveryKind && (
-              <button
-                onClick={() => {
-                  downloadRecovery(recoveryKind);
-                  clearRecovery(recoveryKind);
-                  showError(null);
-                }}
-                style={{
-                  background: '#334155',
-                  border: '1px solid #fca5a5',
-                  color: '#fff',
-                  borderRadius: '4px',
-                  padding: '3px 8px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Récupérer la copie
-              </button>
-            )}
-            <button
-              onClick={() => {
-                if (recoveryKind) clearRecovery(recoveryKind);
-                showError(null);
-                if (styleResolution.error) setDismissedStyleError(styleResolution.error);
-              }}
-              aria-label="Fermer le message d'erreur"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-              }}
-            >
-              ×
-            </button>
-          </div>
+          />
         )}
+
+        <ZoomToolbar
+          zoom={zoom}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          onZoomOut={() => setZoom((z) => Math.max(MIN_ZOOM, Math.round(z * 0.9 * 100) / 100))}
+          onZoomIn={() => setZoom((z) => Math.min(MAX_ZOOM, Math.round(z * 1.1 * 100) / 100))}
+          onFit={fitToView}
+        />
 
         <ErrorBoundary
           fallbackTitle="Erreur de rendu du canevas"
           resetKey={boundaryKey}
-          onReset={resetProject}
+          onReset={resetWorkspace}
         >
           <div
             style={{
+              width: resolvedStyle.width * zoom,
+              height: resolvedStyle.height * zoom,
+              flex: '0 0 auto',
+              transform: `scale(${zoom})`,
+              transformOrigin: 'top left',
               borderRadius: '14px',
               overflow: 'hidden',
               boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.7)',
@@ -1138,39 +1396,6 @@ export default function App() {
           </div>
         </ErrorBoundary>
 
-        {/* Save status is always visible so a failed autosave cannot go unnoticed. */}
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            fontSize: '12px',
-            color: saveStatus === 'error' ? '#fca5a5' : '#94a3b8',
-            padding: '0 4px',
-          }}
-        >
-          {saveStatus === 'saving'
-            ? 'Sauvegarde en cours…'
-            : saveStatus === 'error'
-              ? 'Sauvegarde impossible (stockage plein ou indisponible)'
-              : 'Modifications sauvegardées localement'}
-          {saveStatus === 'error' && (
-            <button
-              onClick={flushSave}
-              style={{
-                marginLeft: '8px',
-                background: '#334155',
-                color: '#fff',
-                border: '1px solid #475569',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-              }}
-            >
-              Réessayer
-            </button>
-          )}
-        </div>
-
         {/* Bottom toolbar: only the controls for the active mode. */}
         <div className="io-toolbar">
           {mode === 'card' ? (
@@ -1190,6 +1415,14 @@ export default function App() {
                   {isExportingPdf ? 'Génération PDF...' : `Planche PDF (${cards.length} cartes)`}
                 </button>
                 <button
+                  onClick={() => setShowPdfOptions(true)}
+                  style={toolBtnStyle}
+                  title={STRINGS.pdfOptions}
+                  aria-label={STRINGS.pdfOptions}
+                >
+                  {STRINGS.pdfOptions}
+                </button>
+                <button
                   onClick={exportPNG}
                   style={{ ...toolBtnStyle, background: '#10b981', fontWeight: 'bold' }}
                 >
@@ -1203,10 +1436,10 @@ export default function App() {
           )}
 
           <button
-            onClick={resetProject}
+            onClick={resetWorkspace}
             className="io-button"
             style={{ background: '#7f1d1d', borderColor: '#991b1b' }}
-            title="Réinitialiser et effacer les deux sauvegardes locales"
+            title="Revenir au template intégré et vider le deck"
           >
             <RotateCcw size={16} /> Réinitialiser
           </button>
@@ -1218,7 +1451,7 @@ export default function App() {
         <ErrorBoundary
           fallbackTitle="Erreur dans l'inspecteur"
           resetKey={boundaryKey}
-          onReset={resetProject}
+          onReset={resetWorkspace}
         >
           {mode === 'card' ? (
             <>
@@ -1364,7 +1597,7 @@ export default function App() {
                   >
                     <option value="">-- Aucun (Style racine) --</option>
                     {pack.styles
-                      .filter((s) => s.key !== currentStyleKey)
+                      .filter((s) => s.key !== currentStyleKey && !descendantStyleKeys.has(s.key))
                       .map((s) => (
                         <option key={s.key} value={s.key}>
                           {s.name} ({s.key})
@@ -1435,6 +1668,8 @@ export default function App() {
                   </button>
                 </div>
                 <div
+                  role="listbox"
+                  aria-label="Arborescence des composants"
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -1471,6 +1706,18 @@ export default function App() {
                         <div
                           key={field.id}
                           draggable
+                          role="option"
+                          aria-selected={isSelected}
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setUi({ selectedFieldId: field.id });
+                            } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                              e.preventDefault();
+                              reorderFieldByStep(field.id, e.key === 'ArrowUp' ? -1 : 1);
+                            }
+                          }}
                           onDragStart={(e) => {
                             e.dataTransfer.effectAllowed = 'move';
                             e.dataTransfer.setData('text/plain', field.id);
@@ -1498,7 +1745,7 @@ export default function App() {
                             fontSize: '13px',
                             opacity: draggedComponentId === field.id ? 0.5 : 1,
                           }}
-                          title={`${field.label || field.id} (${field.id}) — glisser pour réordonner`}
+                          title={`${field.label || field.id} (${field.id}) — glisser ou Alt+↑/↓ pour réordonner`}
                         >
                           <span style={{ color: '#475569', fontSize: '12px' }}>└</span>
                           <Icon size={14} color={isSelected ? '#f59e0b' : '#94a3b8'} />
@@ -1583,6 +1830,32 @@ export default function App() {
                       }
                       style={inputStyle}
                     />
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>{STRINGS.fieldId}</label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={fieldIdDraft}
+                        onChange={(e) => setFieldIdDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                        }}
+                        onBlur={() => renameFieldId(selectedField.id, fieldIdDraft)}
+                        style={inputStyle}
+                      />
+                      <button
+                        onClick={() => renameFieldId(selectedField.id, fieldIdDraft)}
+                        style={smallBtnStyle}
+                        title={STRINGS.renameField}
+                      >
+                        {STRINGS.renameField}
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                      Renommer met à jour les valeurs des cartes et la sélection.
+                    </div>
                   </div>
 
                   <div
@@ -1953,6 +2226,79 @@ export default function App() {
                         value={selectedField.color || '#ffffff'}
                         onChange={(color) => updateFieldProps(selectedField.id, { color })}
                       />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div>
+                          <label style={labelStyle}>{STRINGS.verticalAlign}</label>
+                          <select
+                            value={selectedField.verticalAlign || 'top'}
+                            onChange={(e) =>
+                              updateFieldProps(selectedField.id, {
+                                verticalAlign: e.target.value as NonNullable<
+                                  TemplateField['verticalAlign']
+                                >,
+                              })
+                            }
+                            style={inputStyle}
+                          >
+                            <option value="top">Haut</option>
+                            <option value="middle">Milieu</option>
+                            <option value="bottom">Bas</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>{STRINGS.lineHeight}</label>
+                          <input
+                            type="number"
+                            min={0.5}
+                            max={5}
+                            step={0.05}
+                            value={selectedField.lineHeight ?? 1.25}
+                            onChange={(e) =>
+                              updateFieldProps(selectedField.id, {
+                                lineHeight: clampNumber(e.target.value, 1.25, 0.5, 5),
+                              })
+                            }
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>{STRINGS.letterSpacing}</label>
+                          <input
+                            type="number"
+                            min={-100}
+                            max={100}
+                            step={0.5}
+                            value={selectedField.letterSpacing ?? 0}
+                            onChange={(e) =>
+                              updateFieldProps(selectedField.id, {
+                                letterSpacing: clampNumber(e.target.value, 0, -100, 100),
+                              })
+                            }
+                            style={inputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>{STRINGS.strokeWidth}</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.5}
+                            value={selectedField.strokeWidth ?? 0}
+                            onChange={(e) =>
+                              updateFieldProps(selectedField.id, {
+                                strokeWidth: clampNumber(e.target.value, 0, 0, 100),
+                              })
+                            }
+                            style={inputStyle}
+                          />
+                        </div>
+                      </div>
+                      <ColorPicker
+                        label={STRINGS.textStroke}
+                        value={selectedField.stroke || '#020617'}
+                        onChange={(stroke) => updateFieldProps(selectedField.id, { stroke })}
+                      />
                     </>
                   )}
 
@@ -1977,14 +2323,17 @@ export default function App() {
 
                   {/* Custom JS Render Hook */}
                   <div>
-                    <label style={labelStyle}>Script JS de rendu (optionnel)</label>
+                    <ScriptHelpPanel
+                      open={showScriptHelp}
+                      onToggle={() => setShowScriptHelp((value) => !value)}
+                    />
                     <textarea
                       rows={4}
                       placeholder={`// Variables: card, style, field
-return {
-  color: '#f59e0b',
-  visible: true
-};`}
+if (card.puissance > 3) {
+  return { color: '#f59e0b' };
+}
+return { color: '#ffffff', visible: true };`}
                       value={selectedField.script || ''}
                       onChange={(e) =>
                         updateFieldProps(selectedField.id, { script: e.target.value })
@@ -2018,57 +2367,22 @@ return {
         <ImageCropper
           imageSrc={cropRequest.src}
           aspectRatio={cropRequest.aspectRatio}
-          onCropComplete={(dataUrl) => {
-            if (cropRequest.target.kind === 'card' && cropRequest.target.fieldId) {
-              updateCardValue(cropRequest.target.fieldId, dataUrl);
-            } else {
-              updateFieldProps(cropRequest.target.id, { defaultValue: dataUrl });
-            }
-            setCropRequest(null);
-          }}
+          onCropComplete={commitCroppedImage}
           onCancel={() => setCropRequest(null)}
+        />
+      )}
+
+      {showPdfOptions && (
+        <PdfOptionsDialog
+          options={pdfOptions}
+          onChange={setPdfOptions}
+          onCancel={() => setShowPdfOptions(false)}
+          onGenerate={() => {
+            setShowPdfOptions(false);
+            void handleExportDeckPdf();
+          }}
         />
       )}
     </div>
   );
 }
-
-const toolBtnStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '6px',
-  padding: '8px 12px',
-  background: '#334155',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontSize: '13px',
-};
-
-const smallBtnStyle: React.CSSProperties = {
-  padding: '5px 8px',
-  background: '#334155',
-  color: '#f8fafc',
-  border: 'none',
-  borderRadius: '5px',
-  cursor: 'pointer',
-  fontSize: '11px',
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px',
-  borderRadius: '6px',
-  background: '#1e293b',
-  color: '#fff',
-  border: '1px solid #334155',
-  boxSizing: 'border-box',
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: '12px',
-  color: '#94a3b8',
-  display: 'block',
-  marginBottom: '4px',
-};

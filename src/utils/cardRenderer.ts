@@ -3,6 +3,8 @@ import { CardData, ResolvedCardStyle } from '../types/template';
 import { evaluateFieldScript } from './scriptEvaluator';
 import { parseRichTextToSegments } from '../components/RichTextEditor';
 import { layoutRichText } from './richTextLayout';
+import { resolveImageRef } from '../io/imageStore';
+import { loadImage } from './imageLoader';
 
 /** Renders a card into a detached Konva stage — no live UI state is touched. */
 export async function renderCardToDataUrl(
@@ -103,6 +105,11 @@ export async function renderCardToDataUrl(
             fill: color,
             align: field.align || 'left',
             opacity,
+            verticalAlign: field.verticalAlign ?? 'top',
+            lineHeight: field.lineHeight,
+            letterSpacing: field.letterSpacing,
+            stroke: field.stroke,
+            strokeWidth: field.strokeWidth,
           }),
         );
         continue;
@@ -114,6 +121,10 @@ export async function renderCardToDataUrl(
           fontSize,
           align: field.align || 'left',
           fontFamily: field.fontFamily || 'Arial',
+          height,
+          lineHeight: field.lineHeight,
+          verticalAlign: field.verticalAlign,
+          letterSpacing: field.letterSpacing,
         });
         const group = new Konva.Group({ x, y, width, height, opacity });
         for (const run of runs) {
@@ -134,6 +145,10 @@ export async function renderCardToDataUrl(
                       : 'normal',
               textDecoration: run.underline ? 'underline' : '',
               fill: color,
+              lineHeight: field.lineHeight,
+              letterSpacing: field.letterSpacing,
+              stroke: field.stroke,
+              strokeWidth: field.strokeWidth,
             }),
           );
         }
@@ -172,27 +187,12 @@ export async function renderCardToDataUrl(
 
         if (src) {
           imageLoads.push(
-            new Promise<void>((resolve) => {
-              const img = new window.Image();
-              let settled = false;
-              const finish = (draw: () => void) => {
-                if (settled) return;
-                settled = true;
-                window.clearTimeout(timeout);
-                img.onload = null;
-                img.onerror = null;
-                draw();
-                resolve();
-              };
-              const timeout = window.setTimeout(() => finish(() => placeholder()), 8000);
-              img.crossOrigin = 'anonymous';
-              img.onload = () =>
-                finish(() => group.add(new Konva.Image({ image: img, width, height })));
-              // CORS-blocked, broken or stalled images fall back to a placeholder
-              // instead of tainting the canvas or hanging the whole export.
-              img.onerror = () => finish(placeholder);
-              img.src = src;
-            }),
+            resolveImageRef(String(src))
+              .then((resolved) => loadImage(resolved))
+              .then((img) => {
+                if (img) group.add(new Konva.Image({ image: img, width, height }));
+                else placeholder();
+              }),
           );
         } else {
           placeholder();

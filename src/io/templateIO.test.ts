@@ -1,16 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { CardTemplatePack } from '../types/template';
-import { DECK_STORAGE_KEY } from './deckIO';
-import { DECK_FORMAT, TEMPLATE_FORMAT } from './formats';
-import {
-  clearTemplateSession,
-  loadTemplateSession,
-  parseTemplateSessionJson,
-  saveTemplateSession,
-  serializeTemplateSession,
-  TEMPLATE_STORAGE_KEY,
-  TemplateSession,
-} from './templateIO';
+import { DECK_FORMAT, TEMPLATE_FORMAT, FORMAT_VERSION } from './formats';
+import { parseTemplateSessionJson, serializeTemplateSession, TemplateSession } from './templateIO';
 
 const pack: CardTemplatePack = {
   name: 'Pack test',
@@ -31,14 +22,11 @@ const pack: CardTemplatePack = {
 const session: TemplateSession = { pack, activeStyleKey: 'base', mode: 'template' };
 
 describe('templateIO', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
   it('serializes and parses a template file', () => {
     const json = serializeTemplateSession(session);
     const parsed = JSON.parse(json);
     expect(parsed.format).toBe(TEMPLATE_FORMAT);
+    expect(parsed.version).toBe(FORMAT_VERSION);
     expect(parsed.pack.name).toBe('Pack test');
     expect(parseTemplateSessionJson(json)).toEqual(session);
   });
@@ -57,30 +45,8 @@ describe('templateIO', () => {
     expect(parseTemplateSessionJson(legacy).pack.styles[0].key).toBe('default');
   });
 
-  it('uses its own localStorage key and ignores corrupt data', () => {
-    saveTemplateSession(session);
-    expect(localStorage.getItem(TEMPLATE_STORAGE_KEY)).toBeTruthy();
-    expect(localStorage.getItem(DECK_STORAGE_KEY)).toBeNull();
-    expect(loadTemplateSession(session).session).toEqual(session);
-
-    localStorage.setItem(TEMPLATE_STORAGE_KEY, 'not json');
-    const failed = loadTemplateSession(session);
-    expect(failed.session).toEqual(session);
-    expect(failed.error).toMatch(/illisible/);
-    expect(localStorage.getItem('modern-geckos-template-recovery-v1')).toBe('not json');
-    clearTemplateSession();
-    expect(localStorage.getItem(TEMPLATE_STORAGE_KEY)).toBeNull();
-  });
-
-  it('reports autosave failures instead of swallowing them', () => {
-    const original = Storage.prototype.setItem;
-    Storage.prototype.setItem = () => {
-      throw new Error('QuotaExceededError');
-    };
-    try {
-      expect(saveTemplateSession(session)).toBe(false);
-    } finally {
-      Storage.prototype.setItem = original;
-    }
+  it('rejects an old combined project file', () => {
+    const legacyProject = JSON.stringify({ template: session, deck: { cards: [] } });
+    expect(() => parseTemplateSessionJson(legacyProject)).toThrow(/styles/);
   });
 });

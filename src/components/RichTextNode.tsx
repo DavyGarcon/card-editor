@@ -18,6 +18,11 @@ export interface RichTextNodeProps {
   color: string;
   align: 'left' | 'center' | 'right';
   opacity: number;
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  lineHeight?: number;
+  letterSpacing?: number;
+  stroke?: string;
+  strokeWidth?: number;
   isDesignMode: boolean;
   isSelected: boolean;
   onSelect: () => void;
@@ -46,6 +51,11 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
   color,
   align,
   opacity,
+  verticalAlign,
+  lineHeight,
+  letterSpacing,
+  stroke,
+  strokeWidth,
   isDesignMode,
   isSelected,
   onSelect,
@@ -58,8 +68,17 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
 
   const runs = useMemo(
     () =>
-      layoutRichText(parseRichTextToSegments(html || ''), { width, fontSize, align, fontFamily }),
-    [html, width, fontSize, align, fontFamily],
+      layoutRichText(parseRichTextToSegments(html || ''), {
+        width,
+        fontSize,
+        align,
+        fontFamily,
+        height,
+        lineHeight,
+        verticalAlign,
+        letterSpacing,
+      }),
+    [html, width, height, fontSize, align, fontFamily, lineHeight, verticalAlign, letterSpacing],
   );
 
   useEffect(() => {
@@ -124,6 +143,10 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
               fontStyle={toKonvaFontStyle(run.bold, run.italic)}
               textDecoration={run.underline ? 'underline' : ''}
               fill={color}
+              lineHeight={lineHeight}
+              letterSpacing={letterSpacing}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
               listening={false}
             />
           ))

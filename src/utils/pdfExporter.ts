@@ -11,6 +11,8 @@ export interface PdfExportOptions {
   drawCropMarks?: boolean;
   /** Nom du fichier PDF généré */
   filename?: string;
+  /** Format de feuille utilisé pour la planche */
+  paperSize?: 'a4' | 'letter';
 }
 
 export async function exportDeckToPdf(
@@ -23,8 +25,19 @@ export async function exportDeckToPdf(
   }
 
   const ratios = Array.isArray(canvasRatio) ? canvasRatio : cardDataUrls.map(() => canvasRatio);
-  if (ratios.length !== cardDataUrls.length) {
+  if (ratios.length !== cardDataUrls.length || ratios.length === 0) {
     throw new Error('Chaque carte doit avoir ses propres dimensions.');
+  }
+  if (
+    ratios.some(
+      (ratio) =>
+        !Number.isFinite(ratio.width) ||
+        ratio.width <= 0 ||
+        !Number.isFinite(ratio.height) ||
+        ratio.height <= 0,
+    )
+  ) {
+    throw new Error('Dimensions de carte invalides.');
   }
 
   const {
@@ -32,16 +45,20 @@ export async function exportDeckToPdf(
     gapMm = 2,
     drawCropMarks = true,
     filename = 'deck-impression-a4.pdf',
+    paperSize = 'a4',
   } = options;
+  if (!Number.isFinite(cardWidthMm) || cardWidthMm <= 0 || !Number.isFinite(gapMm) || gapMm < 0) {
+    throw new Error("Dimensions d'impression invalides.");
+  }
 
   const imageHeightsMm = ratios.map(
     (ratio) => Math.round((cardWidthMm * ratio.height) / ratio.width / 10) / 10,
   );
   const cellHeightMm = options.cardHeightMm ?? Math.max(...imageHeightsMm);
 
-  // Format A4 Portrait en millimètres (210 x 297 mm)
-  const pageWidth = 210;
-  const pageHeight = 297;
+  // Page portrait en millimètres.
+  const pageWidth = paperSize === 'letter' ? 215.9 : 210;
+  const pageHeight = paperSize === 'letter' ? 279.4 : 297;
   const minMargin = 10;
 
   // Calcul automatique du nombre de colonnes et lignes par page A4
@@ -62,7 +79,7 @@ export async function exportDeckToPdf(
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
-    format: 'a4',
+    format: paperSize,
   });
 
   cardDataUrls.forEach((dataUrl, index) => {

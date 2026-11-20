@@ -2,9 +2,6 @@ import { CardTemplatePack } from '../types/template';
 import { validateTemplatePack } from '../utils/templateValidation';
 import { downloadJsonFile, jsonFileName, readTextFile } from './fileIO';
 import { DECK_FORMAT, FORMAT_VERSION, isObject, TEMPLATE_FORMAT } from './formats';
-import { storeRecovery } from './recovery';
-
-export const TEMPLATE_STORAGE_KEY = 'modern-geckos-template-v1';
 
 export interface TemplateSession {
   pack: CardTemplatePack;
@@ -12,10 +9,10 @@ export interface TemplateSession {
   mode: 'card' | 'template';
 }
 
-/** Accepts the current format, old unwrapped packs, old single-style files and old project files. */
+/** Accepts the current format, old unwrapped packs and old single-style files. */
 function normalizePackInput(input: unknown): unknown {
   if (!isObject(input)) return input;
-  if (isObject(input.pack) && input.format === undefined) return input.pack;
+  if (isObject(input.pack) && Array.isArray(input.pack.styles)) return input.pack;
   if (Array.isArray(input.fields) && !Array.isArray(input.styles)) {
     const name = typeof input.name === 'string' ? input.name : 'Template Importé';
     return {
@@ -85,49 +82,4 @@ export async function loadTemplateFile(file: File): Promise<TemplateSession> {
 
 export function saveTemplateFile(session: TemplateSession): void {
   downloadJsonFile(jsonFileName(session.pack.name, 'template'), serializeTemplateSession(session));
-}
-
-export interface TemplateLoadResult {
-  session: TemplateSession;
-  error?: string;
-}
-
-export function loadTemplateSession(fallback: TemplateSession): TemplateLoadResult {
-  try {
-    const raw = localStorage.getItem(TEMPLATE_STORAGE_KEY);
-    if (!raw) return { session: fallback };
-    return { session: parseTemplateSessionJson(raw) };
-  } catch (err) {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(TEMPLATE_STORAGE_KEY);
-    } catch {
-      // Storage is unavailable entirely.
-    }
-    if (raw) storeRecovery('template', raw);
-    return {
-      session: fallback,
-      error: `Sauvegarde du template illisible : ${
-        err instanceof Error ? err.message : 'erreur inconnue'
-      }. Une copie de récupération a été conservée.`,
-    };
-  }
-}
-
-/** Returns false when storage is full/disabled so the UI can warn the user. */
-export function saveTemplateSession(session: TemplateSession): boolean {
-  try {
-    localStorage.setItem(TEMPLATE_STORAGE_KEY, serializeTemplateSession(session));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function clearTemplateSession(): void {
-  try {
-    localStorage.removeItem(TEMPLATE_STORAGE_KEY);
-  } catch {
-    // Ignore.
-  }
 }

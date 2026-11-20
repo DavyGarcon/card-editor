@@ -43,4 +43,36 @@ describe('layoutRichText', () => {
       84,
     );
   });
+
+  it('applies a custom line-height multiplier', () => {
+    const runs = layoutRichText([segment('aaa bbb ccc')], {
+      width: 40,
+      fontSize: 16,
+      lineHeight: 2,
+    });
+    expect(runs.map((run) => run.y)).toEqual([0, 32, 64]);
+  });
+
+  it('vertically aligns the text block inside the field height', () => {
+    const options = { width: 200, fontSize: 16, height: 100 };
+    expect(layoutRichText([segment('Hi')], options)[0].y).toBe(0);
+    expect(layoutRichText([segment('Hi')], { ...options, verticalAlign: 'middle' })[0].y).toBe(42);
+    expect(layoutRichText([segment('Hi')], { ...options, verticalAlign: 'bottom' })[0].y).toBe(84);
+    // A field that is too short never pushes text upwards.
+    expect(
+      layoutRichText([segment('Hi')], { ...options, height: 10, verticalAlign: 'bottom' })[0].y,
+    ).toBe(0);
+  });
+
+  it('accounts for letter spacing when measuring and aligning', () => {
+    const runs = layoutRichText([segment('Hi')], {
+      width: 100,
+      fontSize: 16,
+      align: 'center',
+      letterSpacing: 4,
+    });
+    // 'Hi' measures 2 * 8 + 1 * 4 = 20px, centred in 100px.
+    expect(runs).toHaveLength(1);
+    expect(runs[0].x).toBe(40);
+  });
 });
