@@ -95,7 +95,7 @@ describe('ScriptHelpPanel', () => {
 describe('PdfOptionsDialog', () => {
   const options = {
     paperSize: 'a4' as const,
-    cardWidthMm: 63.5,
+    orientation: 'portrait' as const,
     gapMm: 2,
     drawCropMarks: true,
   };
@@ -107,6 +107,7 @@ describe('PdfOptionsDialog', () => {
     render(
       <PdfOptionsDialog
         options={options}
+        cardWidthMm={63.5}
         onChange={onChange}
         onCancel={onCancel}
         onGenerate={onGenerate}
@@ -115,11 +116,44 @@ describe('PdfOptionsDialog', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
 
-    fireEvent.change(screen.getByLabelText(STRINGS.paperSize), { target: { value: 'letter' } });
-    expect(onChange).toHaveBeenLastCalledWith({ ...options, paperSize: 'letter' });
+    const paperSelect = screen.getByLabelText(STRINGS.paperSize);
+    const formats = Array.from((paperSelect as HTMLSelectElement).options).map((option) => ({
+      value: option.value,
+      label: option.textContent,
+    }));
+    expect(formats.map((format) => format.value)).toEqual([
+      'a0',
+      'a1',
+      'a2',
+      'a3',
+      'a4',
+      'a5',
+      'a6',
+      'a7',
+      'a8',
+      'a9',
+      'a10',
+      'letter',
+      'legal',
+      'tabloid',
+    ]);
+    expect(formats.find((format) => format.value === 'a3')?.label).toContain('A3');
+    expect(formats.find((format) => format.value === 'a5')?.label).toContain('A5');
 
-    fireEvent.change(screen.getByLabelText(STRINGS.cardWidth), { target: { value: '70' } });
-    expect(onChange).toHaveBeenLastCalledWith({ ...options, cardWidthMm: 70 });
+    fireEvent.change(paperSelect, { target: { value: 'a3' } });
+    expect(onChange).toHaveBeenLastCalledWith({ ...options, paperSize: 'a3' });
+
+    const orientationSelect = screen.getByLabelText(STRINGS.orientation) as HTMLSelectElement;
+    expect(Array.from(orientationSelect.options).map((option) => option.value)).toEqual([
+      'portrait',
+      'landscape',
+    ]);
+    fireEvent.change(orientationSelect, { target: { value: 'landscape' } });
+    expect(onChange).toHaveBeenLastCalledWith({ ...options, orientation: 'landscape' });
+
+    // Card width is displayed but cannot be edited in the dialog.
+    expect(screen.getByText(/63\.5 mm/)).toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton', { name: STRINGS.cardWidth })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText(STRINGS.cropMarks));
     expect(onChange).toHaveBeenLastCalledWith({ ...options, drawCropMarks: false });

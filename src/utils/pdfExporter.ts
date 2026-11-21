@@ -1,4 +1,5 @@
 import type { jsPDF as JsPdfType } from 'jspdf';
+import { getPaperDimensions, type PaperOrientation, type PaperSize } from './paperFormats';
 
 export interface PdfExportOptions {
   /** Largeur réelle d'impression d'une carte en millimètres (ex: 63.5 pour format Poker/Magic) */
@@ -12,7 +13,9 @@ export interface PdfExportOptions {
   /** Nom du fichier PDF généré */
   filename?: string;
   /** Format de feuille utilisé pour la planche */
-  paperSize?: 'a4' | 'letter';
+  paperSize?: PaperSize;
+  /** Sens d'impression de la feuille */
+  orientation?: PaperOrientation;
 }
 
 export async function exportDeckToPdf(
@@ -46,22 +49,24 @@ export async function exportDeckToPdf(
     drawCropMarks = true,
     filename = 'deck-impression-a4.pdf',
     paperSize = 'a4',
+    orientation = 'portrait',
   } = options;
   if (!Number.isFinite(cardWidthMm) || cardWidthMm <= 0 || !Number.isFinite(gapMm) || gapMm < 0) {
     throw new Error("Dimensions d'impression invalides.");
   }
 
   const imageHeightsMm = ratios.map(
-    (ratio) => Math.round((cardWidthMm * ratio.height) / ratio.width / 10) / 10,
+    (ratio) => Math.round(((cardWidthMm * ratio.height) / ratio.width) * 10) / 10,
   );
   const cellHeightMm = options.cardHeightMm ?? Math.max(...imageHeightsMm);
 
-  // Page portrait en millimètres.
-  const pageWidth = paperSize === 'letter' ? 215.9 : 210;
-  const pageHeight = paperSize === 'letter' ? 279.4 : 297;
+  // Dimensions de la feuille en millimètres.
+  const paper = getPaperDimensions(paperSize, orientation);
+  const pageWidth = paper.widthMm;
+  const pageHeight = paper.heightMm;
   const minMargin = 10;
 
-  // Calcul automatique du nombre de colonnes et lignes par page A4
+  // Calcul automatique du nombre de colonnes et lignes par page
   const cols = Math.max(1, Math.floor((pageWidth - minMargin * 2 + gapMm) / (cardWidthMm + gapMm)));
   const rows = Math.max(
     1,
@@ -69,7 +74,7 @@ export async function exportDeckToPdf(
   );
   const cardsPerPage = cols * rows;
 
-  // Centrage parfait de la grille sur la feuille A4
+  // Centrage parfait de la grille sur la feuille
   const gridWidth = cols * cardWidthMm + (cols - 1) * gapMm;
   const gridHeight = rows * cellHeightMm + (rows - 1) * gapMm;
   const startX = (pageWidth - gridWidth) / 2;
@@ -77,13 +82,13 @@ export async function exportDeckToPdf(
 
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({
-    orientation: 'portrait',
+    orientation,
     unit: 'mm',
     format: paperSize,
   });
 
   cardDataUrls.forEach((dataUrl, index) => {
-    // Ajouter une nouvelle page A4 quand la grille est pleine
+    // Ajouter une nouvelle feuille quand la grille est pleine
     if (index > 0 && index % cardsPerPage === 0) {
       doc.addPage();
     }

@@ -122,20 +122,23 @@ describe('App integration', () => {
       deckGroup.compareDocumentPosition(addCardButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     const exportButtons = within(exportGroup).getAllByRole('button');
-    expect(exportButtons).toHaveLength(3);
+    expect(exportButtons).toHaveLength(2);
     for (const button of exportButtons) {
       expect(button.textContent).toBe('');
       expect(button.getAttribute('aria-label')).toBeTruthy();
     }
+    expect(screen.queryByRole('button', { name: 'Options PDF' })).not.toBeInTheDocument();
     // Export / save / load / card buttons sit in a right-aligned actions container.
     for (const group of [deckGroup, exportGroup, cardGroup]) {
       expect(group.querySelector('.io-group-actions')).not.toBeNull();
     }
 
-    // Card actions use the same base style/size as the export buttons.
-    const pdfOptionsButton = within(exportGroup).getByRole('button', { name: 'Options PDF' });
+    // Card actions use the shared tool-button style and icon-only layout.
     for (const button of cardActionButtons) {
-      expect(button.getAttribute('style')).toBe(pdfOptionsButton.getAttribute('style'));
+      const style = button.getAttribute('style') ?? '';
+      expect(style).toContain('display: flex');
+      expect(style).toContain('align-items: center');
+      expect(style).toContain('border-radius: 6px');
     }
     expect(screen.queryByText(/Éditeur de Template/i)).not.toBeInTheDocument();
   });
@@ -171,6 +174,24 @@ describe('App integration', () => {
     ).toBe('');
     expect(within(templateGroup).getByLabelText('Charger un template').textContent).toBe('');
     expect(templateGroup.querySelector('.io-group-actions')).not.toBeNull();
+  });
+
+  it('opens the PDF options dialog from the PDF export button in card mode', () => {
+    render(<App />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    const exportGroup = screen.getByRole('group', { name: /Rendu des cartes/i });
+    fireEvent.click(within(exportGroup).getByRole('button', { name: /Planche PDF/ }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Options PDF' });
+    expect(within(dialog).getByRole('combobox', { name: 'Format de papier' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('combobox', { name: 'Orientation' })).toBeInTheDocument();
+    expect(within(dialog).getByText(/63\.5 mm/)).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole('spinbutton', { name: 'Largeur carte (mm)' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('edits the card width and height in template mode', () => {
@@ -273,6 +294,39 @@ describe('App integration', () => {
     expect(mirrorH).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(mirrorV);
     expect(mirrorV).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('duplicates a component from the tree with its current settings', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
+    const rowsBefore = within(tree).getAllByRole('option');
+    const titleRow = rowsBefore.find((option) => option.textContent?.includes('Nom du Sort'))!;
+    const originalIndex = rowsBefore.indexOf(titleRow);
+
+    // Change an attribute first: the copy must keep this edited value.
+    fireEvent.click(titleRow);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Rotation (°)' }), {
+      target: { value: '33' },
+    });
+    fireEvent.click(within(titleRow).getByRole('button', { name: /Dupliquer/ }));
+
+    const rows = within(tree).getAllByRole('option');
+    const copyRow = rows.find((option) => option.textContent?.includes('Nom du Sort (Copie)'))!;
+    expect(rows).toHaveLength(6);
+    expect(copyRow).toBeDefined();
+    expect(copyRow).toHaveAttribute('aria-selected', 'true');
+    expect(rows.indexOf(copyRow)).toBe(originalIndex);
+    expect(rows[originalIndex + 1].textContent).toContain('Nom du Sort');
+
+    expect(screen.getByDisplayValue('Nom du Sort (Copie)')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('title_copy')).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Rotation (°)' })).toHaveValue(33);
+    expect(screen.getByRole('textbox', { name: 'Couleur du texte' })).toHaveValue('#fbbf24');
+
+    // The duplication and its selection form a single undoable step.
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    expect(within(tree).getAllByRole('option')).toHaveLength(5);
   });
 
   it('edits the rectangle border width in template mode', () => {

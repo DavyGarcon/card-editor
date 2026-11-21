@@ -30,7 +30,6 @@ import {
   Image as ImageIcon,
   GitBranch,
   Copy,
-  Settings2,
 } from 'lucide-react';
 import {
   CardStyleDefinition,
@@ -40,6 +39,8 @@ import {
   TemplateField,
 } from './types/template';
 import { resolveCardStyle } from './utils/styleResolver';
+import { duplicateFieldInStyle } from './utils/duplicateField';
+import { templateWidthToMm } from './utils/printSize';
 import { evaluateFieldScript } from './utils/scriptEvaluator';
 import { DraggableFieldNode } from './components/DraggableFieldNode';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -206,6 +207,8 @@ export default function App() {
     }
   }, [currentStyleKey, pack.styles]);
   const resolvedStyle = styleResolution.style;
+  // Print width is not a user setting: it follows the active template at 150 DPI.
+  const exportedCardWidthMm = templateWidthToMm(resolvedStyle.width);
 
   const imageLinkGroups = useMemo(
     () => getImageLinkGroups(resolvedStyle.fields),
@@ -600,6 +603,17 @@ export default function App() {
         ),
       },
       selectedFieldId: newId,
+    });
+  };
+
+  /** Duplicate a layer with all of its current (resolved) attributes in one undo step. */
+  const duplicateComponent = (fieldId: string) => {
+    const result = duplicateFieldInStyle(pack, currentStyleKey, resolvedStyle.fields, fieldId);
+    if (!result) return;
+    setDocument({
+      ...snapshot(),
+      pack: result.pack,
+      selectedFieldId: result.fieldId,
     });
   };
 
@@ -1100,7 +1114,7 @@ export default function App() {
   const [showPdfOptions, setShowPdfOptions] = useState(false);
   const [pdfOptions, setPdfOptions] = useState<PdfPrintOptions>({
     paperSize: 'a4',
-    cardWidthMm: 63.5,
+    orientation: 'portrait',
     gapMm: 2,
     drawCropMarks: true,
   });
@@ -1122,6 +1136,7 @@ export default function App() {
 
       await exportDeckToPdf(capturedImages, ratios, {
         ...pdfOptions,
+        cardWidthMm: exportedCardWidthMm,
         filename: `${slugify(pack.name)}-planche-${pdfOptions.paperSize}.pdf`,
       });
     } catch (err) {
@@ -1358,7 +1373,7 @@ export default function App() {
               <span className="io-group-label">Rendu</span>
               <div className="io-group-actions">
                 <button
-                  onClick={handleExportDeckPdf}
+                  onClick={() => setShowPdfOptions(true)}
                   disabled={isExportingPdf}
                   style={{
                     ...toolBtnStyle,
@@ -1369,14 +1384,6 @@ export default function App() {
                   title={exportPdfLabel}
                 >
                   <Printer size={16} />
-                </button>
-                <button
-                  onClick={() => setShowPdfOptions(true)}
-                  style={toolBtnStyle}
-                  title={STRINGS.pdfOptions}
-                  aria-label={STRINGS.pdfOptions}
-                >
-                  <Settings2 size={16} />
                 </button>
                 <button
                   onClick={exportPNG}
@@ -1956,6 +1963,29 @@ export default function App() {
                           {inherited && (
                             <span style={{ fontSize: '10px', color: '#38bdf8' }}>hérité</span>
                           )}
+                          <button
+                            type="button"
+                            draggable={false}
+                            aria-label={`Dupliquer ${field.label || field.id}`}
+                            title="Dupliquer le composant avec ses réglages"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              duplicateComponent(field.id);
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            onDragStart={(e) => e.preventDefault()}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              padding: '2px',
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <Copy size={13} />
+                          </button>
                         </div>
                       );
                     })}
@@ -2673,6 +2703,7 @@ return { color: '#ffffff', visible: true };`}
       {showPdfOptions && (
         <PdfOptionsDialog
           options={pdfOptions}
+          cardWidthMm={exportedCardWidthMm}
           onChange={setPdfOptions}
           onCancel={() => setShowPdfOptions(false)}
           onGenerate={() => {

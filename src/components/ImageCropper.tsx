@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { loadImage } from '../utils/imageLoader';
 
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 3;
+const clampZoom = (value: number) =>
+  Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
+
 export interface ImageCropperProps {
   /** Image source (Data URL or external URL with CORS enabled) */
   imageSrc: string;
@@ -194,12 +199,31 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     setOffset((prev) => clampOffset(prev.x + dx, prev.y + dy, zoom, imageEl));
   };
 
-  const handleZoomChange = (nextZoom: number) => {
-    setZoom(nextZoom);
-    if (imageEl) {
-      setOffset((prev) => clampOffset(prev.x, prev.y, nextZoom, imageEl));
-    }
-  };
+  // Shared zoom entry point: the slider, the buttons and the wheel all use it,
+  // so zooming out below 1x stays clamped and centered like zooming in.
+  const applyZoom = useCallback(
+    (nextZoom: number) => {
+      const clamped = clampZoom(nextZoom);
+      setZoom(clamped);
+      if (imageEl) {
+        setOffset((prev) => clampOffset(prev.x, prev.y, clamped, imageEl));
+      }
+    },
+    [imageEl, clampOffset],
+  );
+
+  // Wheel zoom over the preview. A native listener with passive: false is
+  // required to prevent the page from scrolling while zooming.
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || !imageEl) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      applyZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [imageEl, zoom, applyZoom]);
 
   const handleConfirm = () => {
     if (!imageEl) return;
@@ -273,15 +297,33 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
             <div style={styles.controls}>
               <label style={styles.zoomLabel}>
                 Zoom ({Math.round(zoom * 100)}%)
-                <input
-                  type="range"
-                  min={1}
-                  max={3}
-                  step={0.05}
-                  value={zoom}
-                  onChange={(e) => handleZoomChange(Number(e.target.value))}
-                  style={styles.slider}
-                />
+                <div style={styles.zoomRow}>
+                  <button
+                    type="button"
+                    aria-label="Dézoomer"
+                    onClick={() => applyZoom(zoom / 1.2)}
+                    style={styles.zoomButton}
+                  >
+                    −
+                  </button>
+                  <input
+                    type="range"
+                    min={MIN_ZOOM}
+                    max={MAX_ZOOM}
+                    step={0.05}
+                    value={zoom}
+                    onChange={(e) => applyZoom(Number(e.target.value))}
+                    style={styles.slider}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Zoomer"
+                    onClick={() => applyZoom(zoom * 1.2)}
+                    style={styles.zoomButton}
+                  >
+                    +
+                  </button>
+                </div>
               </label>
               <button
                 type="button"
@@ -380,9 +422,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     color: '#cbd5e1',
   },
+  zoomRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
   slider: {
+    flex: 1,
     width: '100%',
     accentColor: '#f59e0b',
+  },
+  zoomButton: {
+    backgroundColor: '#334155',
+    border: '1px solid #475569',
+    borderRadius: '4px',
+    color: '#f8fafc',
+    cursor: 'pointer',
+    fontSize: '14px',
+    lineHeight: '18px',
+    minWidth: '26px',
+    padding: '2px 6px',
   },
   numberInput: {
     width: '100%',

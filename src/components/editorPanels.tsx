@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertCircle, HelpCircle, ZoomIn, ZoomOut } from 'lucide-react';
 import { STRINGS } from '../i18n/strings';
 import { clampNumber } from '../utils/numbers';
+import { PAPER_FORMATS, type PaperOrientation, type PaperSize } from '../utils/paperFormats';
 import {
   inputStyle,
   labelStyle,
@@ -188,14 +189,16 @@ return { color: '#ef4444' };`}
 }
 
 export interface PdfPrintOptions {
-  paperSize: 'a4' | 'letter';
-  cardWidthMm: number;
+  paperSize: PaperSize;
+  orientation: PaperOrientation;
   gapMm: number;
   drawCropMarks: boolean;
 }
 
 export interface PdfOptionsDialogProps {
   options: PdfPrintOptions;
+  /** Read-only print width derived from the active template (150 DPI). */
+  cardWidthMm: number;
   onChange: (options: PdfPrintOptions) => void;
   onCancel: () => void;
   onGenerate: () => void;
@@ -204,6 +207,7 @@ export interface PdfOptionsDialogProps {
 /** Modal for the PDF page layout settings. */
 export function PdfOptionsDialog({
   options,
+  cardWidthMm,
   onChange,
   onCancel,
   onGenerate,
@@ -231,31 +235,37 @@ export function PdfOptionsDialog({
               autoFocus
               value={options.paperSize}
               onChange={(event) =>
-                onChange({ ...options, paperSize: event.target.value as 'a4' | 'letter' })
+                onChange({ ...options, paperSize: event.target.value as PaperSize })
               }
               style={inputStyle}
             >
-              <option value="a4">A4 (210 × 297 mm)</option>
-              <option value="letter">Letter (215.9 × 279.4 mm)</option>
+              {PAPER_FORMATS.map((format) => (
+                <option key={format.id} value={format.id}>
+                  {format.label}
+                </option>
+              ))}
             </select>
           </label>
           <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {STRINGS.cardWidth}
-            <input
-              type="number"
-              min={20}
-              max={200}
-              step={0.5}
-              value={options.cardWidthMm}
+            {STRINGS.orientation}
+            <select
+              value={options.orientation}
               onChange={(event) =>
-                onChange({
-                  ...options,
-                  cardWidthMm: clampNumber(event.target.value, 63.5, 20, 200),
-                })
+                onChange({ ...options, orientation: event.target.value as PaperOrientation })
               }
               style={inputStyle}
-            />
+            >
+              <option value="portrait">{STRINGS.portrait}</option>
+              <option value="landscape">{STRINGS.landscape}</option>
+            </select>
           </label>
+          <div>
+            <span style={labelStyle}>{STRINGS.cardWidth}</span>
+            <div style={{ fontSize: '13px', color: '#f8fafc' }}>
+              {cardWidthMm.toFixed(1)} mm{' '}
+              <span style={{ color: '#94a3b8' }}>(déduite du modèle, 150 DPI)</span>
+            </div>
+          </div>
           <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {STRINGS.gap}
             <input
