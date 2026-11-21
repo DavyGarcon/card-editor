@@ -231,6 +231,31 @@ describe('validateTemplatePack', () => {
     });
     expect(result.styles[0].fields[0].defaultValue).toBe('<b>Ok</b>');
   });
+
+  it('accepts embedded image Data URLs on image fields', () => {
+    const imageData = `data:image/webp;base64,${'a'.repeat(200_000)}`;
+    const result = validateTemplatePack({
+      ...pack,
+      styles: [
+        {
+          ...pack.styles[0],
+          fields: [
+            {
+              id: 'art',
+              label: 'Illustration',
+              type: 'image',
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 100,
+              defaultValue: imageData,
+            },
+          ],
+        },
+      ],
+    });
+    expect(result.styles[0].fields[0].defaultValue).toBe(imageData);
+  });
 });
 
 describe('validateDeck', () => {
@@ -266,5 +291,14 @@ describe('validateDeck', () => {
         styles,
       ),
     ).toThrow(/dupliqué/);
+  });
+
+  it('accepts embedded image Data URLs in card values', () => {
+    const imageData = `data:image/png;base64,${'a'.repeat(200_000)}`;
+    const cards = validateDeck(
+      { cards: [{ id: '1', styleKey: 'base', values: { art: imageData } }] },
+      [],
+    );
+    expect(cards[0].values.art).toBe(imageData);
   });
 });

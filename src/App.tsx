@@ -955,9 +955,9 @@ export default function App() {
   };
 
   // Template pack and deck are saved to / loaded from independent files.
-  const saveTemplate = useCallback(() => {
+  const saveTemplate = useCallback(async () => {
     try {
-      saveTemplateFile(templateSession);
+      await saveTemplateFile(templateSession);
       showError(null);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Erreur lors de l'export du template.");
@@ -1001,9 +1001,9 @@ export default function App() {
     [cards, activeCardId, selectedFieldId, setDocument, showError],
   );
 
-  const saveDeck = useCallback(() => {
+  const saveDeck = useCallback(async () => {
     try {
-      saveDeckFile(deckSession);
+      await saveDeckFile(deckSession);
       showError(null);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Erreur lors de l'export du deck.");
@@ -1196,8 +1196,8 @@ export default function App() {
       } else if (key === 's') {
         // Ctrl+S follows the active workspace: deck in Card mode, template in Template mode.
         event.preventDefault();
-        if (mode === 'template') saveTemplate();
-        else saveDeck();
+        if (mode === 'template') void saveTemplate();
+        else void saveDeck();
       }
     };
     window.addEventListener('keydown', onKeyDown);

@@ -1,6 +1,7 @@
 import { CardTemplatePack } from '../types/template';
 import { validateTemplatePack } from '../utils/templateValidation';
 import { downloadJsonFile, jsonFileName, readTextFile } from './fileIO';
+import { embedImageRefs } from './imageEmbedding';
 import { DECK_FORMAT, FORMAT_VERSION, isObject, TEMPLATE_FORMAT } from './formats';
 
 export interface TemplateSession {
@@ -62,12 +63,15 @@ export function parseTemplateSessionJson(json: string): TemplateSession {
   };
 }
 
-export function serializeTemplateSession(session: TemplateSession): string {
+export async function serializeTemplateSession(session: TemplateSession): Promise<string> {
+  // Loaded images are stored as local `idb:` refs in the editor; embed their
+  // bytes as Data URLs so the saved file is self-contained and portable.
+  const pack = await embedImageRefs(session.pack);
   return JSON.stringify(
     {
       format: TEMPLATE_FORMAT,
       version: FORMAT_VERSION,
-      pack: { ...session.pack, activeStyleKey: session.activeStyleKey },
+      pack: { ...pack, activeStyleKey: session.activeStyleKey },
       activeStyleKey: session.activeStyleKey,
       mode: session.mode,
     },
@@ -80,6 +84,9 @@ export async function loadTemplateFile(file: File): Promise<TemplateSession> {
   return parseTemplateSessionJson(await readTextFile(file));
 }
 
-export function saveTemplateFile(session: TemplateSession): void {
-  downloadJsonFile(jsonFileName(session.pack.name, 'template'), serializeTemplateSession(session));
+export async function saveTemplateFile(session: TemplateSession): Promise<void> {
+  downloadJsonFile(
+    jsonFileName(session.pack.name, 'template'),
+    await serializeTemplateSession(session),
+  );
 }

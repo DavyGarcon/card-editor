@@ -66,6 +66,17 @@ async function readImageBlob(ref: string): Promise<Blob | undefined> {
   });
 }
 
+/**
+ * Reads a stored image as an inline Data URL so it can be embedded in an
+ * exported JSON file. Non-refs (already inline Data URLs or normal URLs) pass
+ * through; a missing Blob keeps its ref instead of silently dropping the image.
+ */
+export async function readImageDataUrl(ref: string): Promise<string> {
+  if (!isImageRef(ref)) return ref;
+  const blob = await readImageBlob(ref);
+  return blob ? blobToDataUrl(blob) : ref;
+}
+
 /** Resolves a stored ref to an object URL; Data URLs and normal URLs pass through. */
 export async function resolveImageRef(ref: string): Promise<string> {
   if (!isImageRef(ref)) return ref;

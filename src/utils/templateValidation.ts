@@ -20,6 +20,8 @@ const MAX_FIELDS_PER_STYLE = 200;
 const MAX_CARDS = 5000;
 const MAX_VALUE_LENGTH = 2_000_000;
 const MAX_DEFAULT_VALUE_LENGTH = 100_000;
+/** Exported images are inline Data URLs, so image values need a much larger bound. */
+const MAX_EMBEDDED_IMAGE_LENGTH = 8_000_000;
 const MAX_ID_LENGTH = 200;
 const MAX_LABEL_LENGTH = 200;
 const MAX_NAME_LENGTH = 300;
@@ -115,7 +117,12 @@ function validateField(input: unknown, path: string): TemplateField {
     field.opacity = Math.min(1, Math.max(0, opacity));
   }
   if (input.defaultValue !== undefined) {
-    const limit = field.type === 'richtext' ? MAX_VALUE_LENGTH : MAX_DEFAULT_VALUE_LENGTH;
+    const limit =
+      field.type === 'image'
+        ? Math.max(MAX_DEFAULT_VALUE_LENGTH, MAX_EMBEDDED_IMAGE_LENGTH)
+        : field.type === 'richtext'
+          ? MAX_VALUE_LENGTH
+          : MAX_DEFAULT_VALUE_LENGTH;
     const defaultValue = requireShortString(input.defaultValue, `${path}.defaultValue`, limit);
     field.defaultValue = field.type === 'richtext' ? sanitizeRichText(defaultValue) : defaultValue;
   }
@@ -284,7 +291,11 @@ export function validateDeck(input: unknown, styles: CardStyleDefinition[]): Car
     for (const [key, value] of Object.entries(valuesRaw)) {
       if (typeof value !== 'string')
         throw new Error(`cards[${index}].values.${key} doit être une chaîne.`);
-      if (value.length > MAX_VALUE_LENGTH) {
+      const limit =
+        value.startsWith('data:image/') && !richTextIds.has(key)
+          ? Math.max(MAX_VALUE_LENGTH, MAX_EMBEDDED_IMAGE_LENGTH)
+          : MAX_VALUE_LENGTH;
+      if (value.length > limit) {
         throw new Error(`cards[${index}].values.${key} dépasse la taille maximale autorisée.`);
       }
       values[key] = richTextIds.has(key) ? sanitizeRichText(value) : value;

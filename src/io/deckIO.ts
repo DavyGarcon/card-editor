@@ -1,6 +1,7 @@
 import { CardData, CardStyleDefinition } from '../types/template';
 import { validateDeck } from '../utils/templateValidation';
 import { downloadJsonFile, jsonFileName, readTextFile } from './fileIO';
+import { embedImageRefs } from './imageEmbedding';
 import { DECK_FORMAT, FORMAT_VERSION, isObject, TEMPLATE_FORMAT } from './formats';
 
 export interface DeckSession {
@@ -72,7 +73,10 @@ export function parseDeckSessionJson(
   };
 }
 
-export function serializeDeckSession(session: DeckSession): string {
+export async function serializeDeckSession(session: DeckSession): Promise<string> {
+  // Cards hold local `idb:` refs in the editor; write the image bytes inline so
+  // the exported deck works on another machine without the source IndexedDB.
+  const cards = await embedImageRefs(session.cards);
   return JSON.stringify(
     {
       format: DECK_FORMAT,
@@ -82,7 +86,7 @@ export function serializeDeckSession(session: DeckSession): string {
         name: session.templateName || '',
         styleKeys: session.styleKeys || [],
       },
-      cards: session.cards,
+      cards,
       activeCardId: session.activeCardId,
     },
     null,
@@ -98,7 +102,7 @@ export async function loadDeckFile(
   return parseDeckSessionJson(await readTextFile(file), styles, options);
 }
 
-export function saveDeckFile(session: DeckSession): void {
+export async function saveDeckFile(session: DeckSession): Promise<void> {
   const name = session.name || session.templateName || 'deck';
-  downloadJsonFile(jsonFileName(name, 'deck'), serializeDeckSession(session));
+  downloadJsonFile(jsonFileName(name, 'deck'), await serializeDeckSession(session));
 }
