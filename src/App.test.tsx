@@ -75,7 +75,6 @@ describe('App integration', () => {
     render(<App />);
     const picker = screen.getByRole('combobox', { name: 'Template intégré' }) as HTMLSelectElement;
     expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
-      'Pack Example',
       'Template Pack Example',
     ]);
     // Alphabetically first template is the one loaded by default.
@@ -95,7 +94,7 @@ describe('App integration', () => {
     expect(within(deckGroup).getByLabelText('Charger un deck').textContent).toBe('');
 
     expect(screen.getByText('Deck (0)')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Nom du Sort' })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: 'Titre' })).toHaveValue('');
     const addCardButton = screen.getByRole('button', { name: /Ajouter une Carte/i });
     const cardGroup = screen.getByRole('group', { name: 'Card' });
     expect(within(cardGroup).getByText('Card')).toBeInTheDocument();
@@ -224,11 +223,11 @@ describe('App integration', () => {
       within(tree)
         .getAllByRole('option')
         .filter((option) => option.textContent?.includes('Illustration')),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
 
     const link = screen.getByRole('combobox', { name: 'Image liée à' }) as HTMLSelectElement;
     const target = Array.from(link.options).find((option) =>
-      option.textContent?.includes('(artwork)'),
+      option.textContent?.includes('(image)'),
     );
     expect(target).toBeDefined();
     fireEvent.change(link, { target: { value: target!.value } });
@@ -237,7 +236,8 @@ describe('App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cartes' }));
     expect(screen.queryByRole('combobox', { name: 'Image liée à' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
-    const sharedInput = screen.getByRole('textbox', { name: /Illustration/ });
+    const sharedInput = document.getElementById('card-field-image') as HTMLInputElement;
+    expect(sharedInput).toBeInTheDocument();
     expect(sharedInput.closest('div')?.parentElement).toHaveTextContent('Source partagée (2)');
     fireEvent.change(sharedInput, { target: { value: 'https://example.com/shared.png' } });
 
@@ -248,7 +248,7 @@ describe('App integration', () => {
     };
     expect(deck.cards[0].values).toMatchObject({
       title: 'Nouvelle Carte',
-      artwork: 'https://example.com/shared.png',
+      image: 'https://example.com/shared.png',
     });
     expect(Object.keys(deck.cards[0].values)).toHaveLength(2);
   });
@@ -303,7 +303,7 @@ describe('App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
     const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
     const rowsBefore = within(tree).getAllByRole('option');
-    const titleRow = rowsBefore.find((option) => option.textContent?.includes('Nom du Sort'))!;
+    const titleRow = rowsBefore.find((option) => option.textContent?.includes('Titre'))!;
     const originalIndex = rowsBefore.indexOf(titleRow);
 
     // Change an attribute first: the copy must keep this edited value.
@@ -311,20 +311,23 @@ describe('App integration', () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Rotation (°)' }), {
       target: { value: '33' },
     });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Couleur du texte' }), {
+      target: { value: '#123456' },
+    });
     fireEvent.click(within(titleRow).getByRole('button', { name: /Dupliquer/ }));
 
     const rows = within(tree).getAllByRole('option');
-    const copyRow = rows.find((option) => option.textContent?.includes('Nom du Sort (Copie)'))!;
+    const copyRow = rows.find((option) => option.textContent?.includes('Titre (Copie)'))!;
     expect(rows).toHaveLength(6);
     expect(copyRow).toBeDefined();
     expect(copyRow).toHaveAttribute('aria-selected', 'true');
     expect(rows.indexOf(copyRow)).toBe(originalIndex);
-    expect(rows[originalIndex + 1].textContent).toContain('Nom du Sort');
+    expect(rows[originalIndex + 1].textContent).toContain('Titre');
 
-    expect(screen.getByDisplayValue('Nom du Sort (Copie)')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Titre (Copie)')).toBeInTheDocument();
     expect(screen.getByDisplayValue('title_copy')).toBeInTheDocument();
     expect(screen.getByRole('spinbutton', { name: 'Rotation (°)' })).toHaveValue(33);
-    expect(screen.getByRole('textbox', { name: 'Couleur du texte' })).toHaveValue('#fbbf24');
+    expect(screen.getByRole('textbox', { name: 'Couleur du texte' })).toHaveValue('#123456');
 
     // The duplication and its selection form a single undoable step.
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
@@ -356,8 +359,15 @@ describe('App integration', () => {
 
     // The control is also available on inherited/pre-existing select fields.
     const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
-    fireEvent.click(within(tree).getByRole('option', { name: /École de Magie/ }));
-    expect(screen.getByRole('combobox', { name: 'Valeur par défaut (Template)' })).toHaveValue('');
+    const inheritedSelect = within(tree)
+      .getAllByRole('option')
+      .find(
+        (option) =>
+          option.textContent?.includes('Liste Déroulante') &&
+          option.textContent?.includes('hérité'),
+      )!;
+    fireEvent.click(inheritedSelect);
+    expect(screen.getByRole('combobox', { name: 'Valeur par défaut (Template)' })).toHaveValue('1');
   });
 
   it('scales the whole card instead of clipping it when zoomed out', () => {
@@ -407,7 +417,7 @@ describe('App integration', () => {
 
   it('does not hijack Ctrl+Z while typing in a field', () => {
     render(<App />);
-    const input = screen.getByRole('textbox', { name: 'Nom du Sort' }) as HTMLTextAreaElement;
+    const input = screen.getByRole('textbox', { name: 'Titre' }) as HTMLTextAreaElement;
     const before = input.value;
     fireEvent.keyDown(input, { key: 'z', ctrlKey: true });
     expect(input.value).toBe(before);
