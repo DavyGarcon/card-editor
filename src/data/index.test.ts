@@ -2,10 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { BUILT_IN_TEMPLATES } from './index';
 
 describe('built-in templates', () => {
-  it('discovers every pack module in src/data, alphabetically by pack name', () => {
-    expect(BUILT_IN_TEMPLATES.map((template) => template.id)).toEqual(['examplePack']);
+  it('discovers every JSON template in src/data, alphabetically by pack name', () => {
+    expect(BUILT_IN_TEMPLATES.map((template) => template.id)).toEqual([
+      'examplePack',
+      'example-template',
+    ]);
     const names = BUILT_IN_TEMPLATES.map((template) => template.pack.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'fr')));
+  });
+
+  it('validates and loads JSON template session files', () => {
+    const jsonTemplate = BUILT_IN_TEMPLATES.find((template) => template.id === 'example-template')!;
+    expect(jsonTemplate.pack.name).toBe('Template Pack Example');
+    expect(jsonTemplate.pack.styles.length).toBeGreaterThan(1);
+    expect(jsonTemplate.pack.styles[0].fields.map((field) => field.id)).toContain('rarity');
   });
 
   it('ships no default card content in the packs', () => {
@@ -13,7 +23,8 @@ describe('built-in templates', () => {
       expect(template.pack.styles.length).toBeGreaterThan(0);
       for (const style of template.pack.styles) {
         for (const field of style.fields) {
-          expect(field.defaultValue).toBeUndefined();
+          // A select's default choice is template configuration, not card content.
+          if (field.type !== 'select') expect(field.defaultValue).toBeUndefined();
         }
       }
     }

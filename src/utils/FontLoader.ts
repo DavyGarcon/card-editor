@@ -1,5 +1,5 @@
 /**
- * Dynamic Google Fonts & Custom Web Font Loader for Modern Geckos.
+ * Dynamic Google Fonts & Custom Web Font Loader for Card Editor.
  * Ensures fonts are fetched and ready in `document.fonts` before Konva redraws.
  */
 

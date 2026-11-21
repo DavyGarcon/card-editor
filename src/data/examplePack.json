@@ -1,0 +1,133 @@
+{
+  "format": "card-editor-template",
+  "version": 1,
+  "pack": {
+    "name": "Template Pack Example",
+    "styles": [
+      {
+        "key": "style_1795270798053",
+        "name": "Carte classique",
+        "fields": [
+          {
+            "id": "title",
+            "label": "Titre",
+            "type": "text",
+            "x": 30,
+            "y": 30,
+            "width": 315,
+            "height": 39,
+            "verticalAlign": "middle",
+            "rotation": 0,
+            "flipX": false,
+            "flipY": false,
+            "zOnly": false,
+            "fontSize": 22,
+            "color": "#ffffff",
+            "align": "center"
+          },
+          {
+            "id": "effect",
+            "label": "Texte Riche",
+            "type": "richtext",
+            "x": 11,
+            "y": 326,
+            "width": 355,
+            "height": 160,
+            "rotation": 0,
+            "flipX": false,
+            "flipY": false,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left"
+          },
+          {
+            "id": "image",
+            "label": "Illustration",
+            "type": "image",
+            "x": 10,
+            "y": 75,
+            "width": 355,
+            "height": 245,
+            "rotation": 0,
+            "flipX": false,
+            "flipY": false,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left"
+          },
+          {
+            "id": "rarity",
+            "label": "Liste Déroulante",
+            "type": "select",
+            "x": 10,
+            "y": 475,
+            "width": 355,
+            "height": 38,
+            "verticalAlign": "middle",
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "defaultValue": "1",
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "center",
+            "options": [
+              {
+                "value": "1",
+                "label": "commun"
+              },
+              {
+                "value": "2",
+                "label": "rare"
+              },
+              {
+                "value": "3",
+                "label": "légendaire"
+              }
+            ],
+            "script": "return {\n  color: card.rarity === 'légendaire' ? '#f59e0b' : card.rarity === 'rare' ? '#38bdf8' : '#94a3b8'\n};"
+          }
+        ],
+        "width": 375,
+        "height": 525,
+        "backgroundColor": "#1e293b",
+        "borderColor": "#38bdf8"
+      },
+      {
+        "key": "style_1795274336382",
+        "name": "Carte classique + image sizing script",
+        "basedOn": "style_1795270798053",
+        "fields": [
+          {
+            "id": "field_1795271298718",
+            "label": "Illustration",
+            "type": "image",
+            "x": 10,
+            "y": 75,
+            "width": 355,
+            "height": 245,
+            "rotation": 0,
+            "flipX": false,
+            "flipY": false,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left",
+            "script": "const width = field.width/card.rarity;\nconst height = field.height/card.rarity;\nconst x = field.x+(field.width-width)/2 ;\nconst y = field.y+(field.height-height)/2;\n\n\nreturn { width: width, height: height, x: x, y: y} ;"
+          }
+        ]
+      }
+    ],
+    "activeStyleKey": "style_1795274336382"
+  },
+  "activeStyleKey": "style_1795274336382",
+  "mode": "template"
+}

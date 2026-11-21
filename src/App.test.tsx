@@ -76,6 +76,7 @@ describe('App integration', () => {
     const picker = screen.getByRole('combobox', { name: 'Template intégré' }) as HTMLSelectElement;
     expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
       'Pack Example',
+      'Template Pack Example',
     ]);
     // Alphabetically first template is the one loaded by default.
     expect(picker.value).toBe(picker.options[0].value);

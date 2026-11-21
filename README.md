@@ -28,7 +28,7 @@
 - **Resilient Error Handling**: Granular React Error Boundaries isolate the canvas, inspector, and root UI, with a real recovery action that repairs the document and remounts the failed subtree. `try/catch` guards protect JSON imports, script execution, and file exports; invalid files show a dismissible banner.
 - **Preview Zoom & Accessible Layers**: Zoom from `25%` to `200%` with the toolbar buttons, by typing any percentage directly, or with `Ctrl/Cmd` + wheel. Scaling is performed by Konva so the whole card shrinks or grows without clipping. The layer tree is a keyboard-accessible listbox: `Enter`/`Space` selects, `Alt+↑/↓` reorders, and arrow keys nudge the selected layer in Template mode (hold `Shift` for 10px steps). Each layer also has a duplicate icon that copies all of its current, resolved settings into a new layer directly above it (one undo step).
 - **Safe Imports**: Packs/decks are checked for duplicate card/field IDs, inheritance cycles, and bounded sizes (dimensions, counts, strings, script length). Scripts cannot set an image `src` to a cross-origin URL. Incompatible deck styles are remapped to the active style with a warning rather than silently dropping the deck.
-- **Built-in Templates**: At launch or refresh, the GUI offers every template module in `src/data` (any `*.ts` file exporting `pack`), listed alphabetically by pack name; the first one is loaded by default. Shipped packs define layout only — no pre-filled field values — and the deck always starts empty: cards only appear after you load a deck file explicitly or add one yourself.
+- **Built-in Templates**: At launch or refresh, the GUI offers every `*.json` template file in `src/data` (bare pack or full saved template session). They are listed alphabetically by pack name; the first one is loaded by default. Shipped packs define layout only — no pre-filled field values — and the deck always starts empty: cards only appear after you load a deck file explicitly or add one yourself.
 
 ---
 
@@ -205,7 +205,7 @@ Every color property (`backgroundColor`, `borderColor`, `color`, `fill`, `stroke
 
 ## Saving & Loading
 
-Templates and decks are intentionally the only two save/load notions — different files and different control groups. Template pack save/load buttons are placed above the list of built-in templates; deck save/load buttons stay with the deck. There is no document autosave, no localStorage session, no recovery banner, and no pagehide flush: on launch/refresh only the templates in `src/data` are available and the deck is empty. IndexedDB caches uploaded image blobs only for the editing session; saved files embed those images as inline `data:image/...` base64 URLs instead of `idb:` references, so the JSON works on another machine without that database. IndexedDB never restores a template or deck.
+Templates and decks are intentionally the only two save/load notions — different files and different control groups. Template pack save/load buttons are placed above the list of built-in templates; deck save/load buttons stay with the deck. There is no document autosave, no localStorage session, no recovery banner, and no pagehide flush: on launch/refresh only the `*.json` templates in `src/data` are available and the deck is empty. IndexedDB caches uploaded image blobs only for the editing session; saved files embed those images as inline `data:image/...` base64 URLs instead of `idb:` references, so the JSON works on another machine without that database. IndexedDB never restores a template or deck.
 
 | Content                        | Downloaded file             |
 | ------------------------------ | --------------------------- |
@@ -301,8 +301,9 @@ src/
 │   ├── imageStore.ts          # IndexedDB artwork blobs + `idb:` refs
 │   └── templateIO.ts          # Template file format
 ├── data/
-│   ├── index.ts               # Discovers every `pack` exported from `src/data/*.ts`
-│   └── examplePack.ts         # Built-in template pack (no default card content)
+│   ├── index.ts               # Discovers every template in `src/data/*.json`
+│   ├── examplePack.json       # Built-in template pack (no default card content)
+│   └── example-template.json  # Built-in template in saved-file JSON format
 ├── hooks/
 │   ├── useImage.ts            # Resolves `idb:` refs into loaded images
 │   └── useUndoableDocument.ts # Pack + deck undo/redo history

@@ -1,6 +1,6 @@
 /** Centralized French UI copy. Swap this module to localize the editor. */
 export const STRINGS = {
-  appName: 'Modern Geckos',
+  appName: 'Card Editor',
   undo: 'Annuler',
   redo: 'Rétablir',
   modeCards: 'Cartes',
