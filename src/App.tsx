@@ -1116,6 +1116,7 @@ export default function App() {
     paperSize: 'a4',
     orientation: 'portrait',
     gapMm: 2,
+    marginMm: 10,
     drawCropMarks: true,
   });
 
@@ -2281,25 +2282,29 @@ export default function App() {
                         gap: '6px',
                       }}
                     >
-                      {selectedField.editableInCard === false && (
-                        <div>
-                          <label style={labelStyle}>Valeur sélectionnée (Template)</label>
-                          <select
-                            value={selectedField.defaultValue || ''}
-                            onChange={(e) =>
-                              updateFieldProps(selectedField.id, { defaultValue: e.target.value })
-                            }
-                            style={inputStyle}
-                          >
-                            <option value="">-- Aucune --</option>
-                            {(selectedField.options || []).map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
+                      <div>
+                        <label htmlFor="select-default-value" style={labelStyle}>
+                          Valeur par défaut (Template)
+                        </label>
+                        <select
+                          id="select-default-value"
+                          value={selectedField.defaultValue || ''}
+                          onChange={(e) =>
+                            updateFieldProps(selectedField.id, { defaultValue: e.target.value })
+                          }
+                          style={inputStyle}
+                        >
+                          <option value="">-- Aucune --</option>
+                          {(selectedField.options || []).map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                          Valeur utilisée pour les nouvelles cartes et l'aperçu du template.
                         </div>
-                      )}
+                      </div>
                       <div
                         style={{
                           display: 'flex',

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Group, Text, Transformer } from 'react-konva';
+import { Group, Rect, Text, Transformer } from 'react-konva';
 import Konva from 'konva';
 import { TemplateField } from '../types/template';
 import { parseRichTextToSegments } from './RichTextEditor';
@@ -102,14 +102,25 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
     const scaleY = node.scaleY();
     const nextFlipX = scaleX < 0;
     const nextFlipY = scaleY < 0;
+    const nextWidth = canResize ? Math.max(20, Math.round(node.width() * Math.abs(scaleX))) : width;
+    const nextHeight = canResize
+      ? Math.max(20, Math.round(node.height() * Math.abs(scaleY)))
+      : height;
+    // Mirror is stored as a flag; reset the live scale to ±1 so the next render
+    // does not compound the flip with the resize factor.
     node.scaleX(nextFlipX ? -1 : 1);
     node.scaleY(nextFlipY ? -1 : 1);
+    // Keep the live node in sync until React applies the committed size.
+    if (canResize) {
+      node.width(nextWidth);
+      node.height(nextHeight);
+    }
 
     onChange({
       x: canDrag ? Math.round(node.x()) : x,
       y: canDrag ? Math.round(node.y()) : y,
-      width: canResize ? Math.max(20, Math.round(node.width() * Math.abs(scaleX))) : width,
-      height: canResize ? Math.max(20, Math.round(node.height() * Math.abs(scaleY))) : height,
+      width: nextWidth,
+      height: nextHeight,
       rotation: Math.round(node.rotation()),
       flipX: nextFlipX,
       flipY: nextFlipY,
@@ -137,6 +148,10 @@ export const RichTextNode: React.FC<RichTextNodeProps> = ({
         }}
         onTransformEnd={handleTransformEnd}
       >
+        {/* Konva measures a Group by its children, ignoring the group's own
+            width/height. A full-size backing rect makes the Transformer's box
+            match the field, so resizing writes a size the text can reflow to. */}
+        <Rect width={width} height={height} fill="rgba(0,0,0,0)" />
         {runs.length === 0 ? (
           <Text
             text={`[${label}]`}

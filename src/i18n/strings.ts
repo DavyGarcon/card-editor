@@ -56,6 +56,7 @@ export const STRINGS = {
   landscape: 'Paysage',
   cardWidth: 'Largeur carte (mm)',
   gap: 'Espacement (mm)',
+  margin: 'Marges (mm)',
   cropMarks: 'Traits de coupe',
   generate: 'Générer',
   cancel: 'Annuler',

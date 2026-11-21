@@ -187,6 +187,7 @@ describe('App integration', () => {
     expect(within(dialog).getByRole('combobox', { name: 'Format de papier' })).toBeInTheDocument();
     expect(within(dialog).getByRole('combobox', { name: 'Orientation' })).toBeInTheDocument();
     expect(within(dialog).getByText(/63\.5 mm/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('spinbutton', { name: 'Marges (mm)' })).toHaveValue(10);
     expect(
       within(dialog).queryByRole('spinbutton', { name: 'Largeur carte (mm)' }),
     ).not.toBeInTheDocument();
@@ -338,6 +339,24 @@ describe('App integration', () => {
     expect(borderWidth).toHaveValue(2);
     fireEvent.change(borderWidth, { target: { value: '8' } });
     expect(borderWidth).toHaveValue(8);
+  });
+
+  it('edits the default value of a select field in template mode', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+
+    // A newly added select is editable in card mode, but its default must
+    // still be editable from the template inspector.
+    fireEvent.click(screen.getByRole('button', { name: /\+ Liste$/ }));
+    const defaultValue = screen.getByRole('combobox', { name: 'Valeur par défaut (Template)' });
+    expect(defaultValue).toHaveValue('opt1');
+    fireEvent.change(defaultValue, { target: { value: 'opt2' } });
+    expect(defaultValue).toHaveValue('opt2');
+
+    // The control is also available on inherited/pre-existing select fields.
+    const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
+    fireEvent.click(within(tree).getByRole('option', { name: /École de Magie/ }));
+    expect(screen.getByRole('combobox', { name: 'Valeur par défaut (Template)' })).toHaveValue('');
   });
 
   it('scales the whole card instead of clipping it when zoomed out', () => {

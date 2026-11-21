@@ -31,6 +31,9 @@ describe('exportDeckToPdf', () => {
     await expect(
       exportDeckToPdf(['x'], { width: 63, height: 89 }, { cardWidthMm: 0 }),
     ).rejects.toThrow(/Dimensions d'impression invalides/);
+    await expect(
+      exportDeckToPdf(['x'], { width: 63, height: 89 }, { marginMm: -1 }),
+    ).rejects.toThrow(/Dimensions d'impression invalides/);
   });
 
   it('uses the selected paper size to lay out and center the grid', async () => {
@@ -67,6 +70,29 @@ describe('exportDeckToPdf', () => {
     expect(first[4]).toBeCloseTo(63.5, 1);
     expect(first[5]).toBeCloseTo(88.9, 1);
     expect(second[5]).toBeCloseTo(50.8, 1);
+  });
+
+  it('uses the editable margin to size and center the grid', async () => {
+    const ratio = { width: 63.5, height: 88.9 };
+    const deck = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+
+    await exportDeckToPdf(deck, ratio, { paperSize: 'a4', marginMm: 0 });
+    const tight = jsPDFMock.mock.results[0].value as {
+      addImage: ReturnType<typeof vi.fn>;
+      addPage: ReturnType<typeof vi.fn>;
+    };
+    // No margin: 3 columns fit on A4, so 7 cards stay on a single page.
+    expect(tight.addPage).not.toHaveBeenCalled();
+    expect(tight.addImage.mock.calls[0][2] as number).toBeCloseTo(7.75, 1);
+
+    await exportDeckToPdf(deck, ratio, { paperSize: 'a4', marginMm: 10 });
+    const padded = jsPDFMock.mock.results[1].value as {
+      addImage: ReturnType<typeof vi.fn>;
+      addPage: ReturnType<typeof vi.fn>;
+    };
+    // 10 mm margins: only 2 columns fit, so the 7th card needs a second page.
+    expect(padded.addPage).toHaveBeenCalledTimes(1);
+    expect(padded.addImage.mock.calls[0][2] as number).toBeCloseTo(40.5, 1);
   });
 
   it('lays out the grid for landscape sheets', async () => {

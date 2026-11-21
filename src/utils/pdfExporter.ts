@@ -8,6 +8,8 @@ export interface PdfExportOptions {
   cardHeightMm?: number;
   /** Espacement entre les cartes en mm (0 pour découpe bord-à-bord) */
   gapMm?: number;
+  /** Marge minimale autour de la grille sur la feuille, en mm */
+  marginMm?: number;
   /** Afficher les traits de coupe autour des cartes */
   drawCropMarks?: boolean;
   /** Nom du fichier PDF généré */
@@ -46,12 +48,20 @@ export async function exportDeckToPdf(
   const {
     cardWidthMm = 63.5,
     gapMm = 2,
+    marginMm = 10,
     drawCropMarks = true,
     filename = 'deck-impression-a4.pdf',
     paperSize = 'a4',
     orientation = 'portrait',
   } = options;
-  if (!Number.isFinite(cardWidthMm) || cardWidthMm <= 0 || !Number.isFinite(gapMm) || gapMm < 0) {
+  if (
+    !Number.isFinite(cardWidthMm) ||
+    cardWidthMm <= 0 ||
+    !Number.isFinite(gapMm) ||
+    gapMm < 0 ||
+    !Number.isFinite(marginMm) ||
+    marginMm < 0
+  ) {
     throw new Error("Dimensions d'impression invalides.");
   }
 
@@ -64,13 +74,12 @@ export async function exportDeckToPdf(
   const paper = getPaperDimensions(paperSize, orientation);
   const pageWidth = paper.widthMm;
   const pageHeight = paper.heightMm;
-  const minMargin = 10;
 
   // Calcul automatique du nombre de colonnes et lignes par page
-  const cols = Math.max(1, Math.floor((pageWidth - minMargin * 2 + gapMm) / (cardWidthMm + gapMm)));
+  const cols = Math.max(1, Math.floor((pageWidth - marginMm * 2 + gapMm) / (cardWidthMm + gapMm)));
   const rows = Math.max(
     1,
-    Math.floor((pageHeight - minMargin * 2 + gapMm) / (cellHeightMm + gapMm)),
+    Math.floor((pageHeight - marginMm * 2 + gapMm) / (cellHeightMm + gapMm)),
   );
   const cardsPerPage = cols * rows;
 

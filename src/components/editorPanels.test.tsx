@@ -97,6 +97,7 @@ describe('PdfOptionsDialog', () => {
     paperSize: 'a4' as const,
     orientation: 'portrait' as const,
     gapMm: 2,
+    marginMm: 10,
     drawCropMarks: true,
   };
 
@@ -154,6 +155,9 @@ describe('PdfOptionsDialog', () => {
     // Card width is displayed but cannot be edited in the dialog.
     expect(screen.getByText(/63\.5 mm/)).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton', { name: STRINGS.cardWidth })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(STRINGS.margin), { target: { value: '25' } });
+    expect(onChange).toHaveBeenLastCalledWith({ ...options, marginMm: 25 });
 
     fireEvent.click(screen.getByLabelText(STRINGS.cropMarks));
     expect(onChange).toHaveBeenLastCalledWith({ ...options, drawCropMarks: false });

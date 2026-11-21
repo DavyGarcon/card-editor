@@ -192,6 +192,7 @@ export interface PdfPrintOptions {
   paperSize: PaperSize;
   orientation: PaperOrientation;
   gapMm: number;
+  marginMm: number;
   drawCropMarks: boolean;
 }
 
@@ -276,6 +277,20 @@ export function PdfOptionsDialog({
               value={options.gapMm}
               onChange={(event) =>
                 onChange({ ...options, gapMm: clampNumber(event.target.value, 2, 0, 20) })
+              }
+              style={inputStyle}
+            />
+          </label>
+          <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {STRINGS.margin}
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              value={options.marginMm}
+              onChange={(event) =>
+                onChange({ ...options, marginMm: clampNumber(event.target.value, 10, 0, 100) })
               }
               style={inputStyle}
             />
