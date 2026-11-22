@@ -75,7 +75,7 @@ describe('duplicateField helpers', () => {
     const nextFields = result!.pack.styles[0].fields;
     expect(nextFields).toHaveLength(4);
     expect(nextFields.find((item) => item.id === 'target_copy')).toMatchObject({
-      z: 2,
+      z: 1.5,
       x: 12,
       fontSize: 18,
     });
@@ -108,10 +108,35 @@ describe('duplicateField helpers', () => {
       x: 12,
       color: '#fff',
       fontSize: 22,
-      z: 1,
+      z: 0.5,
     });
     expect(copy).not.toHaveProperty('zOnly');
+    expect(result!.pack.styles[1].fields).toHaveLength(1);
+    expect(result!.pack.styles[1].fields[0]).not.toHaveProperty('zOnly');
     expect(resolveCardStyle('child', result!.pack.styles).fields).toHaveLength(2);
+  });
+
+  it('does not add z-only overrides for the other inherited layers', () => {
+    const pack: CardTemplatePack = {
+      name: 'Pack',
+      styles: [
+        {
+          key: 'base',
+          name: 'Base',
+          fields: [field('top', { z: 4 }), field('effect'), field('bottom', { z: 0 })],
+        },
+        { key: 'child', name: 'Child', basedOn: 'base', fields: [] },
+      ],
+    };
+    const resolved = resolveCardStyle('child', pack.styles).fields;
+    const result = duplicateFieldInStyle(pack, 'child', resolved, 'effect')!;
+
+    expect(result.pack.styles[1].fields.map((item) => item.id)).toEqual(['effect_copy']);
+    const order = resolveCardStyle('child', result.pack.styles)
+      .fields.map((item, index) => ({ id: item.id, value: item.z ?? index, index }))
+      .sort((a, b) => b.value - a.value || b.index - a.index)
+      .map((item) => item.id);
+    expect(order).toEqual(['top', 'effect_copy', 'effect', 'bottom']);
   });
 
   it('is a no-op for an unknown field', () => {

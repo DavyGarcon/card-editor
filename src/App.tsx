@@ -429,20 +429,9 @@ export default function App() {
           height: 525,
           backgroundColor: '#1e293b',
           borderColor: '#38bdf8',
-          fields: [
-            {
-              id: 'title',
-              label: 'Titre',
-              type: 'text',
-              x: 30,
-              y: 30,
-              width: 315,
-              height: 36,
-              fontSize: 22,
-              color: '#ffffff',
-              align: 'center',
-            },
-          ],
+          // No starter layer: a style can be switched to `basedOn` later
+          // without accidentally overriding the inherited definition.
+          fields: [],
         };
 
     // One history step: adding a style, selecting it and re-keying the card
@@ -461,7 +450,25 @@ export default function App() {
     setPack(
       (prev) => ({
         ...prev,
-        styles: prev.styles.map((s) => (s.key === currentStyleKey ? { ...s, ...updates } : s)),
+        styles: prev.styles.map((s) => {
+          if (s.key !== currentStyleKey) return s;
+          const next = { ...s, ...updates };
+          // When a style starts inheriting, its previous local definitions of
+          // parent fields must not silently override the parent. Keep only
+          // fields that are genuinely new to this style.
+          if (updates.basedOn) {
+            try {
+              const parentFieldIds = new Set(
+                resolveCardStyle(updates.basedOn, prev.styles).fields.map((field) => field.id),
+              );
+              next.fields = s.fields.filter((field) => !parentFieldIds.has(field.id));
+            } catch {
+              // The selector prevents invalid targets; keep the fields if the
+              // parent cannot be resolved for any other reason.
+            }
+          }
+          return next;
+        }),
       }),
       `style-meta-${currentStyleKey}`,
     );

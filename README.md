@@ -133,12 +133,92 @@ Each style defines a card layout. Styles can inherit from another style in the s
 
 #### How Style Inheritance (`basedOn`) Works
 
-- **Dimensions & Colors**: Child properties override parent properties if defined; otherwise, parent values are kept.
-- **Fields Merging**:
-  - If a child field shares the same `id` as a parent field, its properties are merged on top of the parent field.
-  - If a child field has a new `id`, it is appended to the top of the layer stack.
-  - Multi-level inheritance (e.g., `legendary` → `spell` → `base`) is resolved recursively.
-  - **Only overrides are saved**: when a template file is saved, each style with a `basedOn` parent is reduced to a minimal diff against the resolved parent. Unchanged fields are removed from the child's `fields` array, and a changed field keeps only its `id`, its `type`, and the properties that actually differ. New fields (ids absent from the parent) are stored in full. On reload, everything else is loaded from the parent style through `basedOn`. A z-only reorder is serialized as `{ "id": "...", "type": "...", "z": 4, "zOnly": true }`. Imported overrides may omit inherited properties, but the merged field must still be complete (id, type, label, x, y, width, height), otherwise the import is rejected.
+A style can set `basedOn` to the `key` of another style in the same pack. Rather than copying that layout, the child stores **only the differences** and the editor builds a **resolved style** on demand: it starts from the parent, then applies the child's overrides. The resolved style is what the canvas, forms, and PNG/PDF exports render — a child definition is never drawn directly.
+
+##### 1. Resolving the chain
+
+Resolution walks from the root parent down to the active style:
+
+1. Start with the root style (the one without `basedOn`), filling in any missing values with defaults (`width: 375`, `height: 525`, `backgroundColor: #1e293b`, `borderColor: #f59e0b`).
+2. For each child, copy the parent's fields, then apply the child's fields on top.
+3. Repeat until the active style is reached.
+
+Chains can be any depth, for example `legendary` → `spell` → `base`. Inheritance cycles are rejected on import, so resolution always terminates.
+
+##### 2. Style-level properties
+
+`width`, `height`, `backgroundColor`, and `borderColor` follow one rule: **the child's value wins if present, otherwise the parent's is kept**. A child therefore only declares what it wants to change:
+
+```json
+{
+  "key": "rare_spell",
+  "name": "Rare Spell",
+  "basedOn": "base",
+  "borderColor": "#a855f7",
+  "fields": []
+}
+```
+
+This card keeps the base width, height and background; only the border color changes.
+
+##### 3. Field merging
+
+Fields are matched by their `id`:
+
+- **Same `id` as a parent field** → a **partial override**: only the properties it declares replace the parent's values, everything else is inherited. In the file, such an override needs just `id` and `type` plus the changed keys, e.g. `{ "id": "title", "type": "text", "fontSize": 24 }`.
+- **New `id`** → a **new layer**, stored in full (all properties) and appended above the inherited layers (fields are drawn bottom-to-top).
+- **`zOnly: true`** → a special override that changes **only the stacking order** (`z`) and preserves every other inherited property. Later edits to the parent still flow through to that layer.
+
+Other properties, including an image's `linkedTo`, take part in the same merge.
+
+##### 4. What gets written when you save
+
+`Ctrl/Cmd+S` in Template mode compacts every child style into a minimal diff against its **resolved parent** before writing the file:
+
+- Unchanged fields are removed from the child's `fields` entirely.
+- Changed fields keep only `id`, `type` (retained as a schema/sanitization discriminator) and the properties that actually differ from the parent.
+- New field ids are kept in full.
+- A reorder is serialized as `{ "id": "...", "type": "...", "z": 4, "zOnly": true }`.
+- Style-level `width`, `height`, `backgroundColor`, `borderColor` equal to the parent are dropped.
+
+For example, a `rare_spell` child that only enlarges `title` and adds a `glow` box is saved as:
+
+```json
+{
+  "key": "rare_spell",
+  "name": "Rare Spell",
+  "basedOn": "base",
+  "fields": [
+    { "id": "title", "type": "text", "fontSize": 24 },
+    {
+      "id": "glow",
+      "label": "Glow",
+      "type": "box",
+      "x": 20,
+      "y": 20,
+      "width": 335,
+      "height": 485,
+      "color": "#a855f7",
+      "strokeWidth": 3
+    }
+  ]
+}
+```
+
+On reload, `resolveCardStyle` rebuilds the exact same layout, so saving and reloading never changes what you see. Older files that store full child definitions still load unchanged; they are compacted the next time you save.
+
+##### 5. Editing inherited styles in the UI
+
+- Both **+ Variante (basedOn)** and **+ Nouveau Style** start with an empty layer list: a new child contains no layers of its own until you edit or add one.
+- Choosing a parent in **Hérite du style (basedOn)** drops any local definition of a field that already exists in the parent, so switching a style to inherit does not silently override the parent's fields.
+- Duplicating a layer gives the copy a free stacking slot (a `z` between its neighbours) instead of renumbering the whole stack, so duplication does not create `zOnly` overrides for the inherited layers.
+- Reordering a layer in the tree does create a `zOnly` override for that one layer, leaving the rest inherited.
+
+The result is that a child style contains only the layers you actually edited or added — everything else keeps coming from the parent.
+
+##### 6. Import validation
+
+Partial overrides are accepted only on child styles that declare `basedOn`; a root style must contain complete field definitions. After merging, the resolved field is validated as a whole — it must have `id`, `type`, `label`, `x`, `y`, `width`, `height` — so an incomplete override that cannot produce a valid field is rejected on import. Rich-text HTML in overrides is sanitized exactly as in root styles.
 
 ---
 

@@ -44,40 +44,31 @@ export function duplicateFieldInStyle(
   const sourcePosition = displayOrder.indexOf(fieldId);
   if (sourcePosition < 0 || !pack.styles.some((style) => style.key === styleKey)) return null;
 
+  const sourceField = resolvedFields.find((field) => field.id === fieldId);
+  if (!sourceField) return null;
+
   const newId = getDuplicateFieldId(
     fieldId,
     resolvedFields.map((field) => field.id),
   );
-  const nextOrder = [...displayOrder];
-  nextOrder.splice(sourcePosition, 0, newId);
-
-  const zById = new Map(
-    nextOrder.map((id, displayIndex) => [id, nextOrder.length - 1 - displayIndex]),
-  );
-  const previousZById = new Map(
-    displayOrder.map((id, displayIndex) => [id, displayOrder.length - 1 - displayIndex]),
-  );
-  const sourceField = resolvedFields.find((field) => field.id === fieldId);
-  if (!sourceField) return null;
-  const duplicate = createDuplicatedField(sourceField, newId, zById.get(newId)!);
+  // Put the copy in the free slot directly above the source instead of
+  // renumbering every other layer. Inherited layers keep their own `z`, so
+  // duplicating a field no longer creates z-only overrides for the whole style.
+  const effectiveZ = (field: TemplateField) =>
+    field.z ?? resolvedFields.findIndex((item) => item.id === field.id);
+  const sourceZ = effectiveZ(sourceField);
+  const aboveId = displayOrder[sourcePosition - 1];
+  const aboveField = aboveId ? resolvedFields.find((field) => field.id === aboveId) : undefined;
+  const aboveZ = aboveField ? effectiveZ(aboveField) : sourceZ + 1;
+  const z = aboveZ > sourceZ ? (aboveZ + sourceZ) / 2 : sourceZ + 1;
+  const duplicate = createDuplicatedField(sourceField, newId, z);
 
   return {
     pack: {
       ...pack,
-      styles: pack.styles.map((style) => {
-        if (style.key !== styleKey) return style;
-        let fields = [...style.fields, duplicate];
-        for (const [id, z] of zById) {
-          if (id === newId || previousZById.get(id) === z) continue;
-          if (fields.some((field) => field.id === id)) {
-            fields = fields.map((field) => (field.id === id ? { ...field, z } : field));
-          } else {
-            const baseField = resolvedFields.find((field) => field.id === id);
-            if (baseField) fields = [...fields, { ...baseField, z, zOnly: true }];
-          }
-        }
-        return { ...style, fields };
-      }),
+      styles: pack.styles.map((style) =>
+        style.key === styleKey ? { ...style, fields: [...style.fields, duplicate] } : style,
+      ),
     },
     fieldId: newId,
   };

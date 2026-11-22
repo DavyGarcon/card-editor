@@ -105,7 +105,7 @@
         "basedOn": "style_1795270798053",
         "fields": [
           {
-            "id": "image",
+            "id": "field_1795271298718",
             "type": "image",
             "label": "Illustration",
             "x": 10,
@@ -157,8 +157,8 @@
         ]
       }
     ],
-    "activeStyleKey": "style_1795345085441"
+    "activeStyleKey": "style_1795274336382"
   },
-  "activeStyleKey": "style_1795345085441",
+  "activeStyleKey": "style_1795274336382",
   "mode": "template"
 }

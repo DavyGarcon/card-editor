@@ -415,6 +415,53 @@ describe('App integration', () => {
     await waitFor(() => expect(saveTemplateFile).toHaveBeenCalledTimes(1));
   });
 
+  it('saves a new inheriting style with no local copy of the parent fields', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    fireEvent.click(screen.getByRole('button', { name: /\+ Nouveau Style/ }));
+
+    const basedOn = screen
+      .getAllByRole('combobox')
+      .find((element) =>
+        Array.from((element as HTMLSelectElement).options).some((option) =>
+          option.textContent?.includes('(style_1795270798053)'),
+        ),
+      ) as HTMLSelectElement;
+    expect(basedOn).toBeDefined();
+    fireEvent.change(basedOn, { target: { value: 'style_1795270798053' } });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saveTemplateFile).toHaveBeenCalledTimes(1));
+    const saved = saveTemplateFile.mock.calls[0][0] as {
+      pack: { styles: Array<{ key: string; fields: Array<{ id: string }> }> };
+    };
+    const newStyle = saved.pack.styles[saved.pack.styles.length - 1];
+    expect(newStyle.fields).toEqual([]);
+  });
+
+  it('saves only edited and added fields in a basedOn style', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    fireEvent.click(screen.getByRole('button', { name: /\+ Variante \(basedOn\)/ }));
+
+    const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
+    const effectRow = within(tree)
+      .getAllByRole('option')
+      .find((option) => option.textContent?.includes('Texte Riche'))!;
+    fireEvent.click(effectRow);
+    const widthInput = screen.getByText('Largeur').nextElementSibling as HTMLInputElement;
+    fireEvent.change(widthInput, { target: { value: '175' } });
+    fireEvent.click(within(effectRow).getByRole('button', { name: /Dupliquer/ }));
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saveTemplateFile).toHaveBeenCalledTimes(1));
+    const saved = saveTemplateFile.mock.calls[0][0] as {
+      pack: { styles: Array<{ key: string; fields: Array<{ id: string }> }> };
+    };
+    const newStyle = saved.pack.styles[saved.pack.styles.length - 1];
+    expect(newStyle.fields.map((field) => field.id).sort()).toEqual(['effect', 'effect_copy']);
+  });
+
   it('does not hijack Ctrl+Z while typing in a field', () => {
     render(<App />);
     const input = screen.getByRole('textbox', { name: 'Titre' }) as HTMLTextAreaElement;
