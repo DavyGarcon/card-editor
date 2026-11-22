@@ -165,6 +165,10 @@ function validateField(input: unknown, path: string, partial = false): TemplateF
       throw new Error(`${path}.editableInCard doit être un booléen.`);
     field.editableInCard = input.editableInCard;
   }
+  if (input.hidden !== undefined) {
+    if (typeof input.hidden !== 'boolean') throw new Error(`${path}.hidden doit être un booléen.`);
+    field.hidden = input.hidden;
+  }
   if (input.script !== undefined)
     field.script = requireShortString(input.script, `${path}.script`, MAX_SCRIPT_LENGTH);
   if (input.options !== undefined) {

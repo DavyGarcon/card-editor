@@ -93,7 +93,9 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
     }
   }, [isSelected, isDesignMode, field.type, loadedImg]);
 
-  if (!isVisible && !isDesignMode) {
+  // Hidden layers are design-only: script `visible` and `hidden` both suppress
+  // them in Card mode, but Template mode always draws them so they stay editable.
+  if ((!isVisible || field.hidden) && !isDesignMode) {
     return null;
   }
 

@@ -49,6 +49,8 @@ export async function renderCardToDataUrl(
     const linkedImageIds = getLinkedImageIds(style.fields);
 
     for (const { field } of ordered) {
+      // Hidden layers are Template-mode only and must never reach PNG/PDF output.
+      if (field.hidden) continue;
       const sourceField =
         field.type === 'image' ? resolveImageLinkRoot(field, style.fields) : field;
       const editable =

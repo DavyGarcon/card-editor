@@ -93,4 +93,24 @@ describe('renderCardToDataUrl linked images', () => {
     expect(konvaState.images).toHaveLength(2);
     expect(konvaState.images.map((config) => config.image.src)).toEqual(['idb:card', 'idb:card']);
   });
+
+  it('does not render hidden layers in exports', async () => {
+    konvaState.images.length = 0;
+    const withHidden = {
+      ...style,
+      fields: [
+        ...style.fields,
+        { ...style.fields[0], id: 'hidden', linkedTo: undefined, hidden: true },
+      ],
+    } as ResolvedCardStyle;
+    const card = {
+      id: 'card-1',
+      styleKey: 'base',
+      values: { root: 'idb:card' },
+    } as CardData;
+
+    await renderCardToDataUrl(card, withHidden);
+
+    expect(konvaState.images).toHaveLength(2);
+  });
 });

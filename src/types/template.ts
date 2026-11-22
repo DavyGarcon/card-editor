@@ -43,6 +43,8 @@ export interface TemplateField {
   linkedTo?: string;
   // Editable in card mode (default: true)
   editableInCard?: boolean;
+  /** Hidden layers are drawn in Template mode only: never in Card mode or exports. */
+  hidden?: boolean;
   // Custom JS rendering script
   script?: string;
 }

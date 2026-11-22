@@ -237,6 +237,30 @@ describe('validateTemplatePack', () => {
     ).toThrow(/rotation doit être compris/);
   });
 
+  it('validates the hidden flag and lets a basedOn child override it', () => {
+    const baseField = pack.styles[0].fields[0];
+    const result = validateTemplatePack({
+      ...pack,
+      styles: [
+        { ...pack.styles[0], fields: [{ ...baseField, hidden: true }] },
+        {
+          key: 'child',
+          name: 'Child',
+          basedOn: 'base',
+          fields: [{ id: 'rules', type: 'richtext', hidden: false }],
+        },
+      ],
+    });
+    expect(result.styles[0].fields[0].hidden).toBe(true);
+    expect(result.styles[1].fields[0].hidden).toBe(false);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ ...baseField, hidden: 'yes' }] }],
+      }),
+    ).toThrow(/hidden doit être un booléen/);
+  });
+
   it('validates linked image sources', () => {
     const artwork = {
       id: 'artwork',

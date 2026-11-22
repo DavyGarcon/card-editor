@@ -23,6 +23,7 @@ export const STRINGS = {
   fieldId: 'Identifiant (ID)',
   renameField: 'Renommer',
   editableInCard: 'Éditable en mode Carte',
+  hidden: 'Masqué (Template uniquement)',
   x: 'X',
   y: 'Y',
   width: 'Largeur',

@@ -224,6 +224,8 @@ export default function App() {
   const cardFormFields = useMemo(
     () =>
       resolvedStyle.fields.filter((field) => {
+        // Hidden layers are only hidden from the canvas: their values remain
+        // editable in the Card Mode form.
         if (field.type !== 'image') return field.editableInCard !== false;
         if (!isImageLinkRoot(field, resolvedStyle.fields)) return false;
         return isImageSourceEditableInCard(field, resolvedStyle.fields);
@@ -284,8 +286,8 @@ export default function App() {
     setErrorBanner(message);
   }, []);
 
-  /** Switch between the built-in packs in src/data; cards stay in the session. */
-  const selectBuiltInTemplate = useCallback(
+  /** Load the built-in pack chosen in the selector, with all of its styles. Cards stay in the session. */
+  const loadBuiltInTemplate = useCallback(
     (templateId: string) => {
       const template = BUILT_IN_TEMPLATES.find((item) => item.id === templateId);
       if (!template) return;
@@ -1282,25 +1284,37 @@ export default function App() {
           </button>
         </div>
 
-        {/* Built-in templates discovered from src/data. No deck is loaded here. */}
-        <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          Templates intégrés
-          <select
-            aria-label="Template intégré"
-            value={activeTemplateId}
-            onChange={(event) => selectBuiltInTemplate(event.target.value)}
-            style={inputStyle}
-          >
-            {BUILT_IN_TEMPLATES.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.pack.name}
-              </option>
-            ))}
-            {!BUILT_IN_TEMPLATES.some((template) => template.id === activeTemplateId) && (
-              <option value={activeTemplateId}>Template chargé depuis un fichier</option>
-            )}
-          </select>
-        </label>
+        {/* Built-in templates discovered from src/data. Selecting a pack only
+            changes the choice; the refresh button next to it loads every style. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={labelStyle}>Templates intégrés</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <select
+              aria-label="Template intégré"
+              value={activeTemplateId}
+              onChange={(event) => setActiveTemplateId(event.target.value)}
+              style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+            >
+              {BUILT_IN_TEMPLATES.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.pack.name}
+                </option>
+              ))}
+              {!BUILT_IN_TEMPLATES.some((template) => template.id === activeTemplateId) && (
+                <option value={activeTemplateId}>Template chargé depuis un fichier</option>
+              )}
+            </select>
+            <button
+              type="button"
+              aria-label="Recharger le template intégré"
+              title="Recharger le template intégré (tous ses styles)"
+              onClick={() => loadBuiltInTemplate(activeTemplateId)}
+              style={{ ...toolBtnStyle, padding: '8px', flexShrink: 0 }}
+            >
+              <RotateCcw size={16} />
+            </button>
+          </div>
+        </div>
 
         {/* Style & Inheritance Switcher */}
         <div
@@ -1971,6 +1985,9 @@ export default function App() {
                           {inherited && (
                             <span style={{ fontSize: '10px', color: '#38bdf8' }}>hérité</span>
                           )}
+                          {field.hidden && (
+                            <span style={{ fontSize: '10px', color: '#f59e0b' }}>masqué</span>
+                          )}
                           <button
                             type="button"
                             draggable={false}
@@ -2118,6 +2135,40 @@ export default function App() {
                       {selectedField.editableInCard !== false
                         ? 'Affiché et modifiable dans le panneau Cartes.'
                         : 'Défini en mode Template uniquement (visible en modes Template et Carte).'}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '13px',
+                        color: '#e2e8f0',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedField.hidden === true}
+                        onChange={(e) =>
+                          updateFieldProps(selectedField.id, { hidden: e.target.checked })
+                        }
+                      />
+                      {STRINGS.hidden}
+                    </label>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                      {selectedField.hidden
+                        ? 'Non affiché dans l’aperçu du mode Carte ni dans les exports (PNG/PDF) ; sa valeur reste éditable dans le formulaire Carte.'
+                        : 'Visible en mode Carte et dans les exports.'}
                     </div>
                   </div>
 

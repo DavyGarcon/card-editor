@@ -160,6 +160,30 @@ describe('App integration', () => {
     expect(screen.queryByRole('option', { name: 'Ancien' })).not.toBeInTheDocument();
   });
 
+  it('loads a built-in pack with all its styles only via the refresh button next to the select', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+
+    const picker = screen.getByRole('combobox', { name: 'Template intégré' }) as HTMLSelectElement;
+    const refresh = screen.getByRole('button', { name: 'Recharger le template intégré' });
+    expect(picker.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Selecting a pack only changes the choice; the loaded pack is untouched.
+    const width = screen.getByRole('spinbutton', { name: 'Largeur carte (px)' });
+    fireEvent.change(width, { target: { value: '500' } });
+    fireEvent.change(picker, { target: { value: picker.options[0].value } });
+    expect(screen.getByRole('spinbutton', { name: 'Largeur carte (px)' })).toHaveValue(500);
+    expect(screen.getByText('Style actif (3)')).toBeInTheDocument();
+
+    // Editing the pack (new style) is also left alone until refresh is clicked.
+    fireEvent.click(screen.getByRole('button', { name: /\+ Nouveau Style/ }));
+    expect(screen.getByText('Style actif (4)')).toBeInTheDocument();
+
+    fireEvent.click(refresh);
+    expect(screen.getByRole('spinbutton', { name: 'Largeur carte (px)' })).toHaveValue(375);
+    expect(screen.getByText('Style actif (3)')).toBeInTheDocument();
+  });
+
   it('shows template-only controls after switching mode', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
@@ -460,6 +484,37 @@ describe('App integration', () => {
     };
     const newStyle = saved.pack.styles[saved.pack.styles.length - 1];
     expect(newStyle.fields.map((field) => field.id).sort()).toEqual(['effect', 'effect_copy']);
+  });
+
+  it('hides a component from the Card preview while keeping its value editable', () => {
+    render(<App />);
+    expect(screen.getByRole('textbox', { name: 'Titre' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    const hiddenToggle = screen.getByRole('checkbox', {
+      name: 'Masqué (Template uniquement)',
+    });
+    expect(hiddenToggle).not.toBeChecked();
+    fireEvent.click(hiddenToggle);
+    expect(hiddenToggle).toBeChecked();
+
+    // The layer stays visible and selectable in Template mode, with a badge.
+    const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
+    const titleRow = within(tree)
+      .getAllByRole('option')
+      .find((option) => option.textContent?.includes('Titre'))!;
+    expect(titleRow).toHaveTextContent('masqué');
+
+    // Hidden layers are absent from the preview but their values stay editable.
+    fireEvent.click(screen.getByRole('button', { name: 'Cartes' }));
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
+    const cardInput = screen.getByRole('textbox', { name: 'Titre' }) as HTMLTextAreaElement;
+    fireEvent.change(cardInput, { target: { value: 'Carte secrète' } });
+    expect(cardInput).toHaveValue('Carte secrète');
+
+    // They remain editable when back in Template mode.
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    expect(screen.getByRole('checkbox', { name: 'Masqué (Template uniquement)' })).toBeChecked();
   });
 
   it('does not hijack Ctrl+Z while typing in a field', () => {
