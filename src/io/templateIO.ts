@@ -3,6 +3,7 @@ import { validateTemplatePack } from '../utils/templateValidation';
 import { downloadJsonFile, jsonFileName, readTextFile } from './fileIO';
 import { embedImageRefs } from './imageEmbedding';
 import { DECK_FORMAT, FORMAT_VERSION, isObject, TEMPLATE_FORMAT } from './formats';
+import { createMinimalTemplatePack } from '../utils/styleOverrides';
 
 export interface TemplateSession {
   pack: CardTemplatePack;
@@ -64,9 +65,9 @@ export function parseTemplateSessionJson(json: string): TemplateSession {
 }
 
 export async function serializeTemplateSession(session: TemplateSession): Promise<string> {
-  // Loaded images are stored as local `idb:` refs in the editor; embed their
-  // bytes as Data URLs so the saved file is self-contained and portable.
-  const pack = await embedImageRefs(session.pack);
+  // Child styles store only what differs from their `basedOn` parent. Compact
+  // before embedding images so unchanged inherited artwork isn't duplicated.
+  const pack = await embedImageRefs(createMinimalTemplatePack(session.pack));
   return JSON.stringify(
     {
       format: TEMPLATE_FORMAT,

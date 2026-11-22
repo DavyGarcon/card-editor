@@ -23,6 +23,77 @@ describe('validateTemplatePack', () => {
     expect(validateTemplatePack(pack).styles[0].fields[0].type).toBe('richtext');
   });
 
+  it('rejects duplicate ids even when one is a partial override', () => {
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          pack.styles[0],
+          {
+            key: 'child',
+            name: 'Child',
+            basedOn: 'base',
+            fields: [
+              { id: 'rules', type: 'richtext', fontSize: 24 },
+              { id: 'rules', type: 'richtext', fontSize: 26 },
+            ],
+          },
+        ],
+      }),
+    ).toThrow(/deux calques/);
+  });
+
+  it('accepts a minimal basedOn override and keeps inherited geometry', () => {
+    const result = validateTemplatePack({
+      ...pack,
+      styles: [
+        pack.styles[0],
+        {
+          key: 'child',
+          name: 'Child',
+          basedOn: 'base',
+          fields: [
+            {
+              id: 'rules',
+              type: 'richtext',
+              fontSize: 24,
+              defaultValue: '<b>Ok</b><img src=x onerror=alert(1)>',
+            },
+          ],
+        },
+      ],
+    });
+    expect(result.styles[1].fields[0]).toEqual({
+      id: 'rules',
+      type: 'richtext',
+      fontSize: 24,
+      defaultValue: '<b>Ok</b>',
+    });
+  });
+
+  it('rejects an incomplete field with no parent to inherit from', () => {
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [{ ...pack.styles[0], fields: [{ id: 'rules', type: 'richtext' }] }],
+      }),
+    ).toThrow(/label/);
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          pack.styles[0],
+          {
+            key: 'child',
+            name: 'Child',
+            basedOn: 'base',
+            fields: [{ id: 'unknown', type: 'richtext', fontSize: 24 }],
+          },
+        ],
+      }),
+    ).toThrow(/résolu/);
+  });
+
   it('rejects unknown inheritance targets', () => {
     expect(() =>
       validateTemplatePack({ ...pack, styles: [{ ...pack.styles[0], basedOn: 'nope' }] }),

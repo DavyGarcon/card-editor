@@ -65,7 +65,11 @@ function requireShortString(value: unknown, path: string, maxLength: number): st
   return text;
 }
 
-function validateField(input: unknown, path: string): TemplateField {
+/**
+ * `partial` fields are overrides in a style with `basedOn`: they only need an
+ * id and a type, the rest is inherited and checked on the resolved style.
+ */
+function validateField(input: unknown, path: string, partial = false): TemplateField {
   if (!isObject(input)) throw new Error(`${path} doit être un objet.`);
   const id = requireString(input.id, `${path}.id`);
   const type = input.type;
@@ -73,15 +77,26 @@ function validateField(input: unknown, path: string): TemplateField {
     throw new Error(`${path}.type doit être l'un de : ${FIELD_TYPES.join(', ')}.`);
   }
 
-  const field: TemplateField = {
-    id,
-    label: requireString(input.label, `${path}.label`, MAX_LABEL_LENGTH),
-    type: type as FieldType,
-    x: requireNumber(input.x, `${path}.x`, -MAX_COORDINATE, MAX_COORDINATE),
-    y: requireNumber(input.y, `${path}.y`, -MAX_COORDINATE, MAX_COORDINATE),
-    width: requireNumber(input.width, `${path}.width`, 1, MAX_DIMENSION),
-    height: requireNumber(input.height, `${path}.height`, 1, MAX_DIMENSION),
-  };
+  const field: TemplateField = { id } as TemplateField;
+  if (type !== undefined) field.type = type as FieldType;
+  if (input.label !== undefined) {
+    field.label = requireString(input.label, `${path}.label`, MAX_LABEL_LENGTH);
+  } else if (!partial) {
+    throw new Error(`${path}.label doit être une chaîne non vide.`);
+  }
+  const geometry = [
+    ['x', -MAX_COORDINATE, MAX_COORDINATE],
+    ['y', -MAX_COORDINATE, MAX_COORDINATE],
+    ['width', 1, MAX_DIMENSION],
+    ['height', 1, MAX_DIMENSION],
+  ] as const;
+  for (const [key, min, max] of geometry) {
+    if (input[key] !== undefined) {
+      field[key] = requireNumber(input[key], `${path}.${key}`, min, max);
+    } else if (!partial) {
+      throw new Error(`${path}.${key} doit être un nombre.`);
+    }
+  }
 
   if (input.verticalAlign !== undefined) {
     if (!['top', 'middle', 'bottom'].includes(String(input.verticalAlign))) {
@@ -173,10 +188,14 @@ function validateStyle(input: unknown, path: string): CardStyleDefinition {
     throw new Error(`${path}.fields dépasse ${MAX_FIELDS_PER_STYLE} calques.`);
   }
 
+  const basedOn =
+    input.basedOn !== undefined ? optionalString(input.basedOn, `${path}.basedOn`) : undefined;
   const style: CardStyleDefinition = {
     key: requireString(input.key, `${path}.key`),
     name: requireString(input.name, `${path}.name`, MAX_NAME_LENGTH),
-    fields: input.fields.map((field, index) => validateField(field, `${path}.fields[${index}]`)),
+    fields: input.fields.map((field, index) =>
+      validateField(field, `${path}.fields[${index}]`, Boolean(basedOn)),
+    ),
   };
   const fieldIds = new Set<string>();
   for (const field of style.fields) {
@@ -185,7 +204,7 @@ function validateStyle(input: unknown, path: string): CardStyleDefinition {
     }
     fieldIds.add(field.id);
   }
-  if (input.basedOn !== undefined) style.basedOn = optionalString(input.basedOn, `${path}.basedOn`);
+  if (basedOn !== undefined) style.basedOn = basedOn;
   for (const key of ['width', 'height'] as const) {
     if (input[key] !== undefined)
       style[key] = requireNumber(input[key], `${path}.${key}`, 1, MAX_DIMENSION);
@@ -251,6 +270,11 @@ export function validateTemplatePack(input: unknown): CardTemplatePack {
     // Throws on inheritance cycles; resolved fields also include inherited
     // images, which may be link targets.
     const resolved = resolveCardStyle(style.key, pack.styles);
+    // Partial overrides are valid only if the merged field is complete, so a
+    // hand-written override cannot leave a layer without geometry or type.
+    resolved.fields.forEach((field, index) => {
+      validateField(field, `styles[${style.key}].fields[${index}] (résolu)`);
+    });
     validateImageLinks(resolved.fields, `styles[${style.key}]`);
   }
 

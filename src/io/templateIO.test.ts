@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CardTemplatePack } from '../types/template';
 import { DECK_FORMAT, TEMPLATE_FORMAT, FORMAT_VERSION } from './formats';
+import { resolveCardStyle } from '../utils/styleResolver';
 import {
   parseTemplateSessionJson,
   saveTemplateFile,
@@ -55,6 +56,48 @@ describe('templateIO', () => {
     expect(parsed.version).toBe(FORMAT_VERSION);
     expect(parsed.pack.name).toBe('Pack test');
     expect(parseTemplateSessionJson(json)).toEqual(session);
+  });
+
+  it('saves child styles as minimal basedOn overrides', async () => {
+    const baseField = pack.styles[0].fields[0];
+    const childPack: CardTemplatePack = {
+      ...pack,
+      styles: [
+        pack.styles[0],
+        {
+          key: 'child',
+          name: 'Child',
+          basedOn: 'base',
+          height: 525,
+          fields: [{ ...baseField }, { ...baseField, id: 'subtitle', fontSize: 12, x: 5 }],
+        },
+      ],
+    };
+    const childSession: TemplateSession = {
+      pack: childPack,
+      activeStyleKey: 'child',
+      mode: 'template',
+    };
+
+    const json = await serializeTemplateSession(childSession);
+    const savedChild = JSON.parse(json).pack.styles[1];
+
+    expect(savedChild.fields).toEqual([
+      {
+        id: 'subtitle',
+        label: 'Titre',
+        type: 'text',
+        x: 5,
+        y: 0,
+        width: 100,
+        height: 20,
+        fontSize: 12,
+      },
+    ]);
+    expect(savedChild.height).toBeUndefined();
+    expect(resolveCardStyle('child', parseTemplateSessionJson(json).pack.styles)).toEqual(
+      resolveCardStyle('child', childPack.styles),
+    );
   });
 
   it('embeds loaded images as Data URLs in the downloaded file', async () => {

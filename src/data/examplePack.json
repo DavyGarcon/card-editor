@@ -1,5 +1,5 @@
 {
-  "format": "card-editor-template",
+  "format": "modern-geckos-template",
   "version": 1,
   "pack": {
     "name": "Template Pack Example",
@@ -10,8 +10,8 @@
         "fields": [
           {
             "id": "title",
-            "label": "Titre",
             "type": "text",
+            "label": "Titre",
             "x": 30,
             "y": 30,
             "width": 315,
@@ -27,8 +27,8 @@
           },
           {
             "id": "effect",
-            "label": "Texte Riche",
             "type": "richtext",
+            "label": "Texte Riche",
             "x": 11,
             "y": 326,
             "width": 355,
@@ -45,8 +45,8 @@
           },
           {
             "id": "image",
-            "label": "Illustration",
             "type": "image",
+            "label": "Illustration",
             "x": 10,
             "y": 75,
             "width": 355,
@@ -63,8 +63,8 @@
           },
           {
             "id": "rarity",
-            "label": "Liste Déroulante",
             "type": "select",
+            "label": "Liste Déroulante",
             "x": 10,
             "y": 475,
             "width": 355,
@@ -77,6 +77,7 @@
             "color": "#ffffff",
             "fill": "#0f172a",
             "align": "center",
+            "script": "return {\n  color: card.rarity === 'légendaire' ? '#f59e0b' : card.rarity === 'rare' ? '#38bdf8' : '#94a3b8'\n};",
             "options": [
               {
                 "value": "1",
@@ -90,8 +91,7 @@
                 "value": "3",
                 "label": "légendaire"
               }
-            ],
-            "script": "return {\n  color: card.rarity === 'légendaire' ? '#f59e0b' : card.rarity === 'rare' ? '#38bdf8' : '#94a3b8'\n};"
+            ]
           }
         ],
         "width": 375,
@@ -105,9 +105,9 @@
         "basedOn": "style_1795270798053",
         "fields": [
           {
-            "id": "field_1795271298718",
-            "label": "Illustration",
+            "id": "image",
             "type": "image",
+            "label": "Illustration",
             "x": 10,
             "y": 75,
             "width": 355,
@@ -115,7 +115,6 @@
             "rotation": 0,
             "flipX": false,
             "flipY": false,
-            "zOnly": false,
             "fontSize": 16,
             "opacity": 1,
             "color": "#ffffff",
@@ -124,10 +123,42 @@
             "script": "const width = field.width/card.rarity;\nconst height = field.height/card.rarity;\nconst x = field.x+(field.width-width)/2 ;\nconst y = field.y+(field.height-height)/2;\n\n\nreturn { width: width, height: height, x: x, y: y} ;"
           }
         ]
+      },
+      {
+        "key": "style_1795345085441",
+        "name": "Carte classique + image dupliquée",
+        "basedOn": "style_1795270798053",
+        "fields": [
+          {
+            "id": "image",
+            "type": "image",
+            "x": 10,
+            "width": 175
+          },
+          {
+            "id": "image_copy",
+            "type": "image",
+            "label": "Illustration (Copie)",
+            "x": 190,
+            "y": 75,
+            "width": 175,
+            "height": 245,
+            "rotation": 0,
+            "flipX": false,
+            "flipY": false,
+            "z": 3,
+            "fontSize": 16,
+            "opacity": 1,
+            "linkedTo": "image",
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left"
+          }
+        ]
       }
     ],
-    "activeStyleKey": "style_1795274336382"
+    "activeStyleKey": "style_1795345085441"
   },
-  "activeStyleKey": "style_1795274336382",
+  "activeStyleKey": "style_1795345085441",
   "mode": "template"
 }
