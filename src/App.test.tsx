@@ -210,7 +210,11 @@ describe('App integration', () => {
     const dialog = screen.getByRole('dialog', { name: 'Options PDF' });
     expect(within(dialog).getByRole('combobox', { name: 'Format de papier' })).toBeInTheDocument();
     expect(within(dialog).getByRole('combobox', { name: 'Orientation' })).toBeInTheDocument();
-    expect(within(dialog).getByText(/63\.5 mm/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/34\.5 mm/)).toBeInTheDocument();
+    const dpiInput = within(dialog).getByRole('spinbutton', { name: 'DPI du modèle' });
+    expect(dpiInput).toHaveValue(276.4);
+    fireEvent.change(dpiInput, { target: { value: '300' } });
+    expect(within(dialog).getByText(/^31\.8 mm/)).toBeInTheDocument();
     expect(within(dialog).getByRole('spinbutton', { name: 'Marges (mm)' })).toHaveValue(10);
     expect(
       within(dialog).queryByRole('spinbutton', { name: 'Largeur carte (mm)' }),

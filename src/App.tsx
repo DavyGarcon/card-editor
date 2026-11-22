@@ -40,7 +40,7 @@ import {
 } from './types/template';
 import { resolveCardStyle } from './utils/styleResolver';
 import { duplicateFieldInStyle } from './utils/duplicateField';
-import { templateWidthToMm } from './utils/printSize';
+import { TEMPLATE_DPI, templateWidthToMm } from './utils/printSize';
 import { evaluateFieldScript } from './utils/scriptEvaluator';
 import { DraggableFieldNode } from './components/DraggableFieldNode';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -138,6 +138,14 @@ export default function App() {
     mode: 'card',
   });
   const [activeTemplateId, setActiveTemplateId] = useState(BUILT_IN_TEMPLATES[0]?.id ?? '');
+  const [pdfOptions, setPdfOptions] = useState<PdfPrintOptions>({
+    paperSize: 'a4',
+    orientation: 'portrait',
+    dpi: TEMPLATE_DPI,
+    gapMm: 2,
+    marginMm: 10,
+    drawCropMarks: true,
+  });
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [dismissedStyleError, setDismissedStyleError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -207,8 +215,8 @@ export default function App() {
     }
   }, [currentStyleKey, pack.styles]);
   const resolvedStyle = styleResolution.style;
-  // Print width is not a user setting: it follows the active template at 150 DPI.
-  const exportedCardWidthMm = templateWidthToMm(resolvedStyle.width);
+  // Print size follows the active template and the DPI chosen in the PDF dialog.
+  const exportedCardWidthMm = templateWidthToMm(resolvedStyle.width, pdfOptions.dpi);
 
   const imageLinkGroups = useMemo(
     () => getImageLinkGroups(resolvedStyle.fields),
@@ -1121,13 +1129,6 @@ export default function App() {
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [showPdfOptions, setShowPdfOptions] = useState(false);
-  const [pdfOptions, setPdfOptions] = useState<PdfPrintOptions>({
-    paperSize: 'a4',
-    orientation: 'portrait',
-    gapMm: 2,
-    marginMm: 10,
-    drawCropMarks: true,
-  });
 
   const handleExportDeckPdf = async () => {
     if (cards.length === 0) return;
@@ -1145,7 +1146,11 @@ export default function App() {
       }
 
       await exportDeckToPdf(capturedImages, ratios, {
-        ...pdfOptions,
+        paperSize: pdfOptions.paperSize,
+        orientation: pdfOptions.orientation,
+        gapMm: pdfOptions.gapMm,
+        marginMm: pdfOptions.marginMm,
+        drawCropMarks: pdfOptions.drawCropMarks,
         cardWidthMm: exportedCardWidthMm,
         filename: `${slugify(pack.name)}-planche-${pdfOptions.paperSize}.pdf`,
       });

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { STRINGS } from '../i18n/strings';
+import { TEMPLATE_DPI } from '../utils/printSize';
 import { ErrorBanner, PdfOptionsDialog, ScriptHelpPanel, ZoomToolbar } from './editorPanels';
 
 describe('ErrorBanner', () => {
@@ -96,6 +97,7 @@ describe('PdfOptionsDialog', () => {
   const options = {
     paperSize: 'a4' as const,
     orientation: 'portrait' as const,
+    dpi: TEMPLATE_DPI,
     gapMm: 2,
     marginMm: 10,
     drawCropMarks: true,
@@ -155,6 +157,11 @@ describe('PdfOptionsDialog', () => {
     // Card width is displayed but cannot be edited in the dialog.
     expect(screen.getByText(/63\.5 mm/)).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton', { name: STRINGS.cardWidth })).not.toBeInTheDocument();
+
+    const dpiInput = screen.getByLabelText(STRINGS.dpi);
+    expect(dpiInput).toHaveValue(276.4);
+    fireEvent.change(dpiInput, { target: { value: '300' } });
+    expect(onChange).toHaveBeenLastCalledWith({ ...options, dpi: 300 });
 
     fireEvent.change(screen.getByLabelText(STRINGS.margin), { target: { value: '25' } });
     expect(onChange).toHaveBeenLastCalledWith({ ...options, marginMm: 25 });

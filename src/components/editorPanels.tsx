@@ -3,6 +3,7 @@ import { AlertCircle, HelpCircle, ZoomIn, ZoomOut } from 'lucide-react';
 import { STRINGS } from '../i18n/strings';
 import { clampNumber } from '../utils/numbers';
 import { PAPER_FORMATS, type PaperOrientation, type PaperSize } from '../utils/paperFormats';
+import { TEMPLATE_DPI } from '../utils/printSize';
 import {
   inputStyle,
   labelStyle,
@@ -191,6 +192,8 @@ return { color: '#ef4444' };`}
 export interface PdfPrintOptions {
   paperSize: PaperSize;
   orientation: PaperOrientation;
+  /** Template DPI used to derive the printed card size. */
+  dpi: number;
   gapMm: number;
   marginMm: number;
   drawCropMarks: boolean;
@@ -198,7 +201,7 @@ export interface PdfPrintOptions {
 
 export interface PdfOptionsDialogProps {
   options: PdfPrintOptions;
-  /** Read-only print width derived from the active template (150 DPI). */
+  /** Read-only print width derived from the active template's scale. */
   cardWidthMm: number;
   onChange: (options: PdfPrintOptions) => void;
   onCancel: () => void;
@@ -260,11 +263,28 @@ export function PdfOptionsDialog({
               <option value="landscape">{STRINGS.landscape}</option>
             </select>
           </label>
+          <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {STRINGS.dpi}
+            <input
+              type="number"
+              min={50}
+              max={1200}
+              step={0.1}
+              value={Math.round(options.dpi * 10) / 10}
+              onChange={(event) =>
+                onChange({
+                  ...options,
+                  dpi: clampNumber(event.target.value, TEMPLATE_DPI, 50, 1200),
+                })
+              }
+              style={inputStyle}
+            />
+          </label>
           <div>
             <span style={labelStyle}>{STRINGS.cardWidth}</span>
             <div style={{ fontSize: '13px', color: '#f8fafc' }}>
               {cardWidthMm.toFixed(1)} mm{' '}
-              <span style={{ color: '#94a3b8' }}>(déduite du modèle, 150 DPI)</span>
+              <span style={{ color: '#94a3b8' }}>(déduite du modèle et du DPI)</span>
             </div>
           </div>
           <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>

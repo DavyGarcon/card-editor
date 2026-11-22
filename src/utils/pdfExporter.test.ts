@@ -55,21 +55,31 @@ describe('exportDeckToPdf', () => {
   });
 
   it('draws each card at its real print height', async () => {
-    // Built-in card ratio: 375 x 525 px printed at 63.5 mm wide.
+    // Built-in card ratio: 375 x 525 px printed at 34.5 mm wide.
     await exportDeckToPdf(
       ['a', 'b'],
       [
         { width: 375, height: 525 },
         { width: 375, height: 300 },
       ],
+      { cardWidthMm: 34.5 },
     );
     const doc = jsPDFMock.mock.results[0].value as { addImage: ReturnType<typeof vi.fn> };
     const first = doc.addImage.mock.calls[0];
     const second = doc.addImage.mock.calls[1];
 
-    expect(first[4]).toBeCloseTo(63.5, 1);
-    expect(first[5]).toBeCloseTo(88.9, 1);
-    expect(second[5]).toBeCloseTo(50.8, 1);
+    expect(first[4]).toBeCloseTo(34.5, 1);
+    expect(first[5]).toBeCloseTo(48.3, 1);
+    expect(second[5]).toBeCloseTo(27.6, 1);
+  });
+
+  it('prints a 370 px tall card at 34 mm', async () => {
+    await exportDeckToPdf(['a'], { width: 375, height: 370 }, { cardWidthMm: 34.5 });
+    const doc = jsPDFMock.mock.results[0].value as { addImage: ReturnType<typeof vi.fn> };
+    const call = doc.addImage.mock.calls[0];
+
+    expect(call[4]).toBeCloseTo(34.5, 1);
+    expect(call[5]).toBeCloseTo(34, 1);
   });
 
   it('uses the editable margin to size and center the grid', async () => {

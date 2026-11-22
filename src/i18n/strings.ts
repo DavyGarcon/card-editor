@@ -56,6 +56,7 @@ export const STRINGS = {
   portrait: 'Portrait',
   landscape: 'Paysage',
   cardWidth: 'Largeur carte (mm)',
+  dpi: 'DPI du modèle',
   gap: 'Espacement (mm)',
   margin: 'Marges (mm)',
   cropMarks: 'Traits de coupe',
