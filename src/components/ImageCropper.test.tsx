@@ -29,7 +29,26 @@ describe('ImageCropper', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
       'data:image/png;base64,AAAA',
     );
+    Object.defineProperty(HTMLCanvasElement.prototype, 'setPointerCapture', {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
+
+  const stubCanvasRect = (canvas: HTMLElement) => {
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        width: 360,
+        height: 360,
+        right: 360,
+        bottom: 360,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect;
+  };
 
   const renderLoadedCropper = async (onCropComplete = vi.fn()) => {
     loadImage.mockResolvedValue({ naturalWidth: 600, naturalHeight: 400 });
@@ -99,6 +118,42 @@ describe('ImageCropper', () => {
 
     fireEvent.change(slider, { target: { value: '0.5' } });
     expect(slider).toHaveValue('0.5');
+  });
+
+  it('pans the image even when zoomed below 100%', async () => {
+    const canvas = await renderLoadedCropper();
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '0.5' } });
+    const before = Number(drawImage.mock.calls[drawImage.mock.calls.length - 1]?.[1]);
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 180, clientY: 180 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 200, clientY: 195 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+    const after = Number(drawImage.mock.calls[drawImage.mock.calls.length - 1]?.[1]);
+    expect(after - before).toBeCloseTo(20, 0);
+  });
+
+  it('anchors wheel zoom at the pointer instead of the frame center', async () => {
+    const canvas = await renderLoadedCropper();
+    stubCanvasRect(canvas);
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 270, clientY: 180 });
+
+    // 600x400 image in a 360x360 frame: cover scale at 1.1x is 594 px wide,
+    // centered at -117; anchoring at x=270 shifts the image 9 px left.
+    expect(Number(drawImage.mock.calls[drawImage.mock.calls.length - 1]?.[1])).toBeCloseTo(-126, 0);
+  });
+
+  it('uses the last hovered point when zooming out with the slider', async () => {
+    const canvas = await renderLoadedCropper();
+    stubCanvasRect(canvas);
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 270, clientY: 180 });
+
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '0.5' } });
+
+    // At 0.5x the 270 px-wide image is centered at x=45; the right-side anchor
+    // pushes it to x=90, where its right edge touches the frame.
+    expect(Number(drawImage.mock.calls[drawImage.mock.calls.length - 1]?.[1])).toBeCloseTo(90, 0);
   });
 
   it('uses the zoomed-out view when exporting the crop', async () => {

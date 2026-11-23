@@ -39,6 +39,8 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
 
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  /** Last pointed position in canvas coordinates; zoom anchors here. */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
   // Modal semantics: focus is trapped inside, Escape cancels, focus returns to
   // the trigger when the dialog closes.
@@ -119,14 +121,15 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     [viewportWidth, viewportHeight],
   );
 
-  // Clamp pan offset so empty borders never appear inside the crop frame
+  // Keep the image covering the frame when it is larger, and fully inside the
+  // frame when it is smaller. Either way panning remains possible at all zooms.
   const clampOffset = useCallback(
     (rawX: number, rawY: number, currentZoom: number, img: HTMLImageElement) => {
       const scale = getBaseScale(img) * currentZoom;
       const scaledW = img.naturalWidth * scale;
       const scaledH = img.naturalHeight * scale;
-      const maxX = Math.max(0, (scaledW - viewportWidth) / 2);
-      const maxY = Math.max(0, (scaledH - viewportHeight) / 2);
+      const maxX = Math.abs(scaledW - viewportWidth) / 2;
+      const maxY = Math.abs(scaledH - viewportHeight) / 2;
 
       return {
         x: Math.min(maxX, Math.max(-maxX, rawX)),
@@ -134,6 +137,22 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
       };
     },
     [getBaseScale, viewportWidth, viewportHeight],
+  );
+
+  // Track the pointer over the preview so zoom buttons and the slider inherit
+  // the same anchor as the wheel. jsdom (and zero-sized layouts) keep the center fallback.
+  const recordPointer = useCallback(
+    (clientX: number, clientY: number, canvas: HTMLCanvasElement) => {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+        return;
+      }
+      pointerRef.current = {
+        x: ((clientX - rect.left) / rect.width) * viewportWidth,
+        y: ((clientY - rect.top) / rect.height) * viewportHeight,
+      };
+    },
+    [viewportWidth, viewportHeight],
   );
 
   // Draw live preview onto the interactive canvas
@@ -171,11 +190,13 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
+    recordPointer(e.clientX, e.clientY, e.currentTarget);
     setIsDragging(true);
     setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    recordPointer(e.clientX, e.clientY, e.currentTarget);
     if (!isDragging || !imageEl) return;
     const nextOffset = clampOffset(e.clientX - dragStart.x, e.clientY - dragStart.y, zoom, imageEl);
     setOffset(nextOffset);
@@ -199,17 +220,30 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     setOffset((prev) => clampOffset(prev.x + dx, prev.y + dy, zoom, imageEl));
   };
 
-  // Shared zoom entry point: the slider, the buttons and the wheel all use it,
-  // so zooming out below 1x stays clamped and centered like zooming in.
+  // Shared zoom entry point: the slider, the buttons and the wheel all zoom
+  // around the last pointed position (frame center by default), so the pixel
+  // under the cursor stays put at every zoom level, including below 100%.
   const applyZoom = useCallback(
     (nextZoom: number) => {
       const clamped = clampZoom(nextZoom);
+      const ratio = clamped / zoom;
+      const anchor = pointerRef.current ?? {
+        x: viewportWidth / 2,
+        y: viewportHeight / 2,
+      };
       setZoom(clamped);
       if (imageEl) {
-        setOffset((prev) => clampOffset(prev.x, prev.y, clamped, imageEl));
+        setOffset((prev) =>
+          clampOffset(
+            prev.x + (anchor.x - viewportWidth / 2) * (1 - ratio),
+            prev.y + (anchor.y - viewportHeight / 2) * (1 - ratio),
+            clamped,
+            imageEl,
+          ),
+        );
       }
     },
-    [imageEl, clampOffset],
+    [imageEl, zoom, clampOffset, viewportWidth, viewportHeight],
   );
 
   // Wheel zoom over the preview. A native listener with passive: false is
@@ -219,11 +253,12 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     if (!canvas || !imageEl) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      recordPointer(event.clientX, event.clientY, canvas);
       applyZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
-  }, [imageEl, zoom, applyZoom]);
+  }, [imageEl, zoom, applyZoom, recordPointer]);
 
   const handleConfirm = () => {
     if (!imageEl) return;
