@@ -47,9 +47,9 @@
             "id": "image",
             "type": "image",
             "label": "Illustration",
-            "x": 10,
+            "x": 65,
             "y": 75,
-            "width": 355,
+            "width": 245,
             "height": 245,
             "rotation": 0,
             "flipX": false,
@@ -105,21 +105,8 @@
         "basedOn": "style_1795270798053",
         "fields": [
           {
-            "id": "field_1795271298718",
+            "id": "image",
             "type": "image",
-            "label": "Illustration",
-            "x": 10,
-            "y": 75,
-            "width": 355,
-            "height": 245,
-            "rotation": 0,
-            "flipX": false,
-            "flipY": false,
-            "fontSize": 16,
-            "opacity": 1,
-            "color": "#ffffff",
-            "fill": "#0f172a",
-            "align": "left",
             "script": "const width = field.width/card.rarity;\nconst height = field.height/card.rarity;\nconst x = field.x+(field.width-width)/2 ;\nconst y = field.y+(field.height-height)/2;\n\n\nreturn { width: width, height: height, x: x, y: y} ;"
           }
         ]
@@ -133,7 +120,8 @@
             "id": "image",
             "type": "image",
             "x": 10,
-            "width": 175
+            "width": 175,
+            "height": 175
           },
           {
             "id": "image_copy",
@@ -142,7 +130,7 @@
             "x": 190,
             "y": 75,
             "width": 175,
-            "height": 245,
+            "height": 175,
             "rotation": 0,
             "flipX": false,
             "flipY": false,
@@ -157,8 +145,8 @@
         ]
       }
     ],
-    "activeStyleKey": "style_1795274336382"
+    "activeStyleKey": "style_1795345085441"
   },
-  "activeStyleKey": "style_1795274336382",
+  "activeStyleKey": "style_1795345085441",
   "mode": "template"
 }

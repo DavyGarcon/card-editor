@@ -1,0 +1,282 @@
+{
+  "format": "modern-geckos-template",
+  "version": 1,
+  "pack": {
+    "name": "JDR Pack",
+    "styles": [
+      {
+        "key": "perso",
+        "name": "Figurine Personnage ( 1.36 m -> 3.6 m )",
+        "fields": [
+          {
+            "id": "image",
+            "type": "image",
+            "label": "Image personnage haut",
+            "x": 5,
+            "y": 375,
+            "width": 370,
+            "height": 370,
+            "rotation": 180,
+            "flipX": true,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left",
+            "script": "const size=[97,97,94,83,97,97,75,120,83,83,124,75,100,77,103,124,137,120,116,103,102,102,94,97,144,97];\n\n\nconst ratio = size[card.type]/100 ;\nconst width = Math.floor(ratio*field.width)+Number(card.taille) ;\nconst height = Math.floor(ratio*field.height)+Number(card.taille) ;\nconst x = field.x+Math.floor((field.width-width)/2) ;\nconst y = field.y-Math.floor((field.height-height)) ;\n\nconst result = { x: x, y: y, width: width, height: height} ;\n\nreturn result;"
+          },
+          {
+            "id": "image_copy",
+            "type": "image",
+            "label": "Image personnage bas",
+            "x": 5,
+            "y": 835,
+            "width": 370,
+            "height": 370,
+            "rotation": 0,
+            "z": 0.5,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "defaultValue": "",
+            "linkedTo": "image",
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left",
+            "hidden": false,
+            "script": "const size=[97,97,94,83,97,97,75,120,83,83,124,75,100,77,103,124,137,120,116,103,102,102,94,97,144,97];\n\n\nconst ratio = size[card.type]/100 ;\nconst width = Math.floor(ratio*field.width)+Number(card.taille) ;\nconst height = Math.floor(ratio*field.height)+Number(card.taille) ;\nconst x = field.x+Math.floor((field.width-width)/2) ;\nconst y = field.y+Math.floor((field.height-height)) ;\n\nconst result = { x: x, y: y, width: width, height: height} ;\n\nreturn result;"
+          },
+          {
+            "id": "type",
+            "type": "select",
+            "label": "Liste Déroulante",
+            "x": 0,
+            "y": 515,
+            "width": 185,
+            "height": 25,
+            "verticalAlign": "middle",
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "defaultValue": "12",
+            "color": "#000000",
+            "fill": "#0f172a",
+            "align": "center",
+            "hidden": true,
+            "options": [
+              {
+                "value": "0",
+                "label": "Ange (161cm)"
+              },
+              {
+                "value": "1",
+                "label": "Bastet (161cm)"
+              },
+              {
+                "value": "2",
+                "label": "Elfe (157cm)"
+              },
+              {
+                "value": "3",
+                "label": "Farfadet (139cm)"
+              },
+              {
+                "value": "4",
+                "label": "Fée électricité (161cm)"
+              },
+              {
+                "value": "5",
+                "label": "Fleur de métal (162cm)"
+              },
+              {
+                "value": "6",
+                "label": "Fouinard (125cm)"
+              },
+              {
+                "value": "7",
+                "label": "Gargouille (200cm)"
+              },
+              {
+                "value": "8",
+                "label": "Gnome (138cm)"
+              },
+              {
+                "value": "9",
+                "label": "Gobelin (139cm)"
+              },
+              {
+                "value": "10",
+                "label": "Golem (207cm)"
+              },
+              {
+                "value": "11",
+                "label": "Gremlin (127cm)"
+              },
+              {
+                "value": "12",
+                "label": "Humain (166cm)"
+              },
+              {
+                "value": "13",
+                "label": "Korrigan (128cm)"
+              },
+              {
+                "value": "14",
+                "label": "Léporide (171cm)"
+              },
+              {
+                "value": "15",
+                "label": "Loup-garou (206cm)"
+              },
+              {
+                "value": "16",
+                "label": "Ogre (228cm)"
+              },
+              {
+                "value": "17",
+                "label": "Ondine (200cm)"
+              },
+              {
+                "value": "18",
+                "label": "Orc (194cm)"
+              },
+              {
+                "value": "19",
+                "label": "Phénix (171cm)"
+              },
+              {
+                "value": "20",
+                "label": "Protys (170cm)"
+              },
+              {
+                "value": "21",
+                "label": "Smog (170cm)"
+              },
+              {
+                "value": "22",
+                "label": "Succube (158cm)"
+              },
+              {
+                "value": "23",
+                "label": "Sylve (162cm)"
+              },
+              {
+                "value": "24",
+                "label": "Troll (239cm)"
+              },
+              {
+                "value": "25",
+                "label": "Vampyr (162cm)"
+              }
+            ]
+          },
+          {
+            "id": "taille",
+            "type": "select",
+            "label": "Modificateur Taille",
+            "x": 190,
+            "y": 514,
+            "width": 185,
+            "height": 25,
+            "verticalAlign": "middle",
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "defaultValue": "0",
+            "color": "#000000",
+            "fill": "#0f172a",
+            "align": "center",
+            "hidden": true,
+            "options": [
+              {
+                "value": "-66",
+                "label": "-30cm"
+              },
+              {
+                "value": "-55",
+                "label": "-25cm"
+              },
+              {
+                "value": "-44",
+                "label": "-20cm"
+              },
+              {
+                "value": "-33",
+                "label": "-15cm"
+              },
+              {
+                "value": "-22",
+                "label": "-10cm"
+              },
+              {
+                "value": "-11",
+                "label": "-5cm"
+              },
+              {
+                "value": "0",
+                "label": "0"
+              },
+              {
+                "value": "11",
+                "label": "+5cm"
+              },
+              {
+                "value": "22",
+                "label": "+10cm"
+              },
+              {
+                "value": "33",
+                "label": "+15cm"
+              },
+              {
+                "value": "44",
+                "label": "+20cm"
+              },
+              {
+                "value": "55",
+                "label": "+25cm"
+              },
+              {
+                "value": "66",
+                "label": "+30cm"
+              }
+            ]
+          }
+        ],
+        "width": 380,
+        "height": 1210,
+        "backgroundColor": "#ffffff",
+        "borderColor": "transparent"
+      },
+      {
+        "key": "style_1795453189763",
+        "name": "Figurine Personnage ( 4.15 m -> 7.2 m )",
+        "basedOn": "perso",
+        "fields": [
+          {
+            "id": "image_copy",
+            "type": "image",
+            "y": 1505,
+            "width": 740,
+            "height": 740,
+            "x": 188
+          },
+          {
+            "id": "image",
+            "type": "image",
+            "x": 188,
+            "y": 745,
+            "width": 740,
+            "height": 740
+          }
+        ],
+        "width": 1125,
+        "height": 2250
+      }
+    ],
+    "activeStyleKey": "style_1795453189763"
+  },
+  "activeStyleKey": "style_1795453189763",
+  "mode": "template"
+}
