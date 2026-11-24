@@ -2,8 +2,11 @@ import type { jsPDF as JsPdfType } from 'jspdf';
 import { getPaperDimensions, type PaperOrientation, type PaperSize } from './paperFormats';
 
 export interface PdfExportOptions {
-  /** Largeur réelle d'impression d'une carte en millimètres (ex: 63.5 pour format Poker/Magic) */
-  cardWidthMm?: number;
+  /**
+   * Largeur réelle d'impression en millimètres. Un tableau permet d'imprimer
+   * chaque carte à la largeur de son propre modèle (deck à styles mixtes).
+   */
+  cardWidthMm?: number | number[];
   /** Hauteur réelle d'impression d'une carte en millimètres (ex: 88.9 pour format Poker/Magic) */
   cardHeightMm?: number;
   /** Espacement entre les cartes en mm (0 pour découpe bord-à-bord) */
@@ -54,9 +57,10 @@ export async function exportDeckToPdf(
     paperSize = 'a4',
     orientation = 'portrait',
   } = options;
+  const widthsMm = Array.isArray(cardWidthMm) ? cardWidthMm : cardDataUrls.map(() => cardWidthMm);
   if (
-    !Number.isFinite(cardWidthMm) ||
-    cardWidthMm <= 0 ||
+    widthsMm.length !== cardDataUrls.length ||
+    widthsMm.some((width) => !Number.isFinite(width) || width <= 0) ||
     !Number.isFinite(gapMm) ||
     gapMm < 0 ||
     !Number.isFinite(marginMm) ||
@@ -66,9 +70,12 @@ export async function exportDeckToPdf(
   }
 
   const imageHeightsMm = ratios.map(
-    (ratio) => Math.round(((cardWidthMm * ratio.height) / ratio.width) * 10) / 10,
+    (ratio, index) => Math.round(((widthsMm[index] * ratio.height) / ratio.width) * 10) / 10,
   );
   const cellHeightMm = options.cardHeightMm ?? Math.max(...imageHeightsMm);
+  // Every column is sized for the widest card, then narrower cards are centred
+  // inside it. The grid stays regular while each card keeps its real size.
+  const columnWidthMm = Math.max(...widthsMm);
 
   // Dimensions de la feuille en millimètres.
   const paper = getPaperDimensions(paperSize, orientation);
@@ -76,7 +83,10 @@ export async function exportDeckToPdf(
   const pageHeight = paper.heightMm;
 
   // Calcul automatique du nombre de colonnes et lignes par page
-  const cols = Math.max(1, Math.floor((pageWidth - marginMm * 2 + gapMm) / (cardWidthMm + gapMm)));
+  const cols = Math.max(
+    1,
+    Math.floor((pageWidth - marginMm * 2 + gapMm) / (columnWidthMm + gapMm)),
+  );
   const rows = Math.max(
     1,
     Math.floor((pageHeight - marginMm * 2 + gapMm) / (cellHeightMm + gapMm)),
@@ -84,7 +94,7 @@ export async function exportDeckToPdf(
   const cardsPerPage = cols * rows;
 
   // Centrage parfait de la grille sur la feuille
-  const gridWidth = cols * cardWidthMm + (cols - 1) * gapMm;
+  const gridWidth = cols * columnWidthMm + (cols - 1) * gapMm;
   const gridHeight = rows * cellHeightMm + (rows - 1) * gapMm;
   const startX = (pageWidth - gridWidth) / 2;
   const startY = (pageHeight - gridHeight) / 2;
@@ -106,26 +116,21 @@ export async function exportDeckToPdf(
     const col = indexOnPage % cols;
     const row = Math.floor(indexOnPage / cols);
 
-    const x = startX + col * (cardWidthMm + gapMm);
-    const y = startY + row * (cellHeightMm + gapMm);
+    const cellX = startX + col * (columnWidthMm + gapMm);
+    const cellY = startY + row * (cellHeightMm + gapMm);
+    const cardWidth = widthsMm[index];
     const imageHeight = imageHeightsMm[index];
+    // Mixed styles can differ in both width and ratio: centre the real card in
+    // its cell instead of stretching it to the cell or to the active style.
+    const x = cellX + (columnWidthMm - cardWidth) / 2;
+    const y = cellY + (cellHeightMm - imageHeight) / 2;
 
-    // 1. Dessiner l'image haute résolution de la carte, centrée dans sa cellule
-    // (les styles mixtes ont des ratios différents : surtout pas d'étirement).
-    doc.addImage(
-      dataUrl,
-      'PNG',
-      x,
-      y + (cellHeightMm - imageHeight) / 2,
-      cardWidthMm,
-      imageHeight,
-      undefined,
-      'FAST',
-    );
+    // 1. Dessiner l'image haute résolution de la carte à sa taille réelle.
+    doc.addImage(dataUrl, 'PNG', x, y, cardWidth, imageHeight, undefined, 'FAST');
 
-    // 2. Dessiner les traits de coupe aux 4 coins de la cellule
+    // 2. Dessiner les traits de coupe aux 4 coins de la carte imprimée
     if (drawCropMarks) {
-      drawCardCropMarks(doc, x, y, cardWidthMm, cellHeightMm);
+      drawCardCropMarks(doc, x, y, cardWidth, imageHeight);
     }
   });
 

@@ -217,6 +217,21 @@ export default function App() {
   const resolvedStyle = styleResolution.style;
   // Print size follows the active template and the DPI chosen in the PDF dialog.
   const exportedCardWidthMm = templateWidthToMm(resolvedStyle.width, pdfOptions.dpi);
+  // Mixed-style decks print each card at the width of its own resolved style.
+  const deckPrintWidthsMm = useMemo(
+    () =>
+      cards.map((card) => {
+        try {
+          return templateWidthToMm(
+            resolveCardStyle(card.styleKey, pack.styles).width,
+            pdfOptions.dpi,
+          );
+        } catch {
+          return exportedCardWidthMm;
+        }
+      }),
+    [cards, pack.styles, pdfOptions.dpi, exportedCardWidthMm],
+  );
 
   const imageLinkGroups = useMemo(
     () => getImageLinkGroups(resolvedStyle.fields),
@@ -1151,7 +1166,7 @@ export default function App() {
         gapMm: pdfOptions.gapMm,
         marginMm: pdfOptions.marginMm,
         drawCropMarks: pdfOptions.drawCropMarks,
-        cardWidthMm: exportedCardWidthMm,
+        cardWidthMm: deckPrintWidthsMm,
         filename: `${slugify(pack.name)}-planche-${pdfOptions.paperSize}.pdf`,
       });
     } catch (err) {
@@ -2771,7 +2786,7 @@ return { color: '#ffffff', visible: true };`}
       {showPdfOptions && (
         <PdfOptionsDialog
           options={pdfOptions}
-          cardWidthMm={exportedCardWidthMm}
+          cardWidthMm={cards.length > 0 ? deckPrintWidthsMm : exportedCardWidthMm}
           onChange={setPdfOptions}
           onCancel={() => setShowPdfOptions(false)}
           onGenerate={() => {

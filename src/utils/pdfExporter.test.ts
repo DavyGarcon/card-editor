@@ -73,6 +73,38 @@ describe('exportDeckToPdf', () => {
     expect(second[5]).toBeCloseTo(27.6, 1);
   });
 
+  it('prints each mixed-style card at its own template width', async () => {
+    await exportDeckToPdf(
+      ['small', 'big'],
+      [
+        { width: 380, height: 1210 },
+        { width: 1125, height: 2250 },
+      ],
+      { cardWidthMm: [34.9, 103.4] },
+    );
+    const doc = jsPDFMock.mock.results[0].value as { addImage: ReturnType<typeof vi.fn> };
+    const small = doc.addImage.mock.calls[0];
+    const big = doc.addImage.mock.calls[1];
+
+    // The narrow card keeps its 34.9 mm width instead of being blown up to the
+    // active/widest style, and both keep their own aspect ratio.
+    expect(small[4]).toBeCloseTo(34.9, 1);
+    expect(small[5]).toBeCloseTo(111.1, 1);
+    expect(big[4]).toBeCloseTo(103.4, 1);
+    expect(big[5]).toBeCloseTo(206.8, 1);
+
+    // A single regular grid is centred on the widest column; narrower cards
+    // are centred inside their cell rather than stretched.
+    expect(big[2]).toBeCloseTo(53.3, 1);
+    expect(small[2]).toBeCloseTo(87.6, 1);
+  });
+
+  it('rejects a width array that does not match the deck', async () => {
+    await expect(
+      exportDeckToPdf(['a', 'b'], { width: 375, height: 525 }, { cardWidthMm: [34.5] }),
+    ).rejects.toThrow(/Dimensions d'impression invalides/);
+  });
+
   it('prints a 370 px tall card at 34 mm', async () => {
     await exportDeckToPdf(['a'], { width: 375, height: 370 }, { cardWidthMm: 34.5 });
     const doc = jsPDFMock.mock.results[0].value as { addImage: ReturnType<typeof vi.fn> };

@@ -6,13 +6,13 @@
     "styles": [
       {
         "key": "perso",
-        "name": "Figurine Personnage ( 1.36 m -> 3.6 m )",
+        "name": "Figurine Personnage ( 95 cm -> 2.69 m )",
         "fields": [
           {
             "id": "image",
             "type": "image",
             "label": "Image personnage haut",
-            "x": 5,
+            "x": 65,
             "y": 375,
             "width": 370,
             "height": 370,
@@ -30,7 +30,7 @@
             "id": "image_copy",
             "type": "image",
             "label": "Image personnage bas",
-            "x": 5,
+            "x": 65,
             "y": 835,
             "width": 370,
             "height": 370,
@@ -244,39 +244,95 @@
             ]
           }
         ],
-        "width": 380,
+        "width": 500,
         "height": 1210,
         "backgroundColor": "#ffffff",
         "borderColor": "transparent"
       },
       {
         "key": "style_1795453189763",
-        "name": "Figurine Personnage ( 4.15 m -> 7.2 m )",
+        "name": "Figurine Personnage ( 2.69 m -> 4.94 m )",
         "basedOn": "perso",
         "fields": [
           {
+            "id": "type",
+            "type": "select",
+            "x": 46,
+            "y": 1092,
+            "defaultValue": "",
+            "options": [
+              {
+                "value": "0",
+                "label": "396 cm"
+              },
+              {
+                "value": "1",
+                "label": "432 cm"
+              },
+              {
+                "value": "2",
+                "label": "468 cm"
+              },
+              {
+                "value": "3",
+                "label": "504 cm"
+              },
+              {
+                "value": "4",
+                "label": "540 cm"
+              },
+              {
+                "value": "5",
+                "label": "576 cm"
+              },
+              {
+                "value": "6",
+                "label": "612 cm"
+              },
+              {
+                "value": "7",
+                "label": "648 cm"
+              },
+              {
+                "value": "8",
+                "label": "684 cm"
+              },
+              {
+                "value": "9",
+                "label": "720 cm"
+              },
+              {
+                "value": "10",
+                "label": "756 cm"
+              }
+            ]
+          },
+          {
+            "id": "taille",
+            "type": "select",
+            "x": 280,
+            "y": 1088
+          },
+          {
             "id": "image_copy",
             "type": "image",
-            "y": 1505,
-            "width": 740,
-            "height": 740,
-            "x": 188
+            "x": 372,
+            "y": 1845,
+            "script": "const size=[180,190,200,210,220,230,240,250,260,270,280];\n\n\nconst ratio = size[card.type]/100 ;\nconst width = Math.floor(ratio*field.width)+Number(card.taille) ;\nconst height = Math.floor(ratio*field.height)+Number(card.taille) ;\nconst x = field.x+Math.floor((field.width-width)/2) ;\nconst y = field.y+Math.floor((field.height-height)) ;\n\nconst result = { x: x, y: y, width: width, height: height} ;\n\nreturn result;"
           },
           {
             "id": "image",
             "type": "image",
-            "x": 188,
-            "y": 745,
-            "width": 740,
-            "height": 740
+            "x": 372,
+            "script": "const size=[180,190,200,210,220,230,240,250,260,270,280];\n\n\nconst ratio = size[card.type]/100 ;\nconst width = Math.floor(ratio*field.width)+Number(card.taille) ;\nconst height = Math.floor(ratio*field.height)+Number(card.taille) ;\nconst x = field.x+Math.floor((field.width-width)/2) ;\nconst y = field.y-Math.floor((field.height-height)) ;\n\nconst result = { x: x, y: y, width: width, height: height} ;\n\nreturn result;"
           }
         ],
-        "width": 1125,
-        "height": 2250
+        "width": 1115,
+        "height": 2220
       }
     ],
-    "activeStyleKey": "style_1795453189763"
+    "activeStyleKey": "perso"
   },
-  "activeStyleKey": "style_1795453189763",
+  "activeStyleKey": "perso",
   "mode": "template"
 }

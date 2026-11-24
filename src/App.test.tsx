@@ -52,6 +52,13 @@ vi.mock('react-konva', () => ({
 
 const saveDeckFile = vi.fn();
 const saveTemplateFile = vi.fn();
+const { renderCardToDataUrlMock, exportDeckToPdfMock } = vi.hoisted(() => ({
+  renderCardToDataUrlMock: vi.fn(async () => 'data:image/png;base64,AAAA'),
+  exportDeckToPdfMock: vi.fn(async () => undefined),
+}));
+
+vi.mock('./utils/cardRenderer', () => ({ renderCardToDataUrl: renderCardToDataUrlMock }));
+vi.mock('./utils/pdfExporter', () => ({ exportDeckToPdf: exportDeckToPdfMock }));
 
 vi.mock('./io/deckIO', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./io/deckIO')>();
@@ -69,6 +76,8 @@ describe('App integration', () => {
     localStorage.clear();
     saveDeckFile.mockClear();
     saveTemplateFile.mockClear();
+    renderCardToDataUrlMock.mockClear();
+    exportDeckToPdfMock.mockClear();
   });
 
   it('starts with the built-in templates and an empty deck', () => {
@@ -221,6 +230,52 @@ describe('App integration', () => {
     ).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('exports mixed-style cards with each card own template style and print width', async () => {
+    render(<App />);
+    const templatePicker = screen.getByRole('combobox', {
+      name: 'Template intégré',
+    }) as HTMLSelectElement;
+    const jdrPack = Array.from(templatePicker.options).find((option) =>
+      option.textContent?.includes('JDR Pack'),
+    );
+    expect(jdrPack).toBeDefined();
+    fireEvent.change(templatePicker, { target: { value: jdrPack!.value } });
+    fireEvent.click(screen.getByRole('button', { name: 'Recharger le template intégré' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
+
+    const styleSelect = screen.getAllByRole('combobox')[1] as HTMLSelectElement;
+    const smallStyle = styleSelect.options[0].value;
+    const bigStyle = styleSelect.options[1].value;
+    // Switching style in Card mode re-keys the active card, then adding a card
+    // gives it the new style: the deck ends up with one card of each size.
+    fireEvent.change(styleSelect, { target: { value: smallStyle } });
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
+    fireEvent.change(styleSelect, { target: { value: bigStyle } });
+
+    const exportGroup = screen.getByRole('group', { name: /Rendu des cartes/i });
+    fireEvent.click(within(exportGroup).getByRole('button', { name: /Planche PDF/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Options PDF' });
+    expect(within(dialog).getByText(/34\.9 – 103\.4 mm \(2 tailles\)/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Générer' }));
+
+    await waitFor(() => expect(exportDeckToPdfMock).toHaveBeenCalledTimes(1));
+    const renderCalls = renderCardToDataUrlMock.mock.calls as unknown as Array<
+      [{ styleKey: string }, { key: string }]
+    >;
+    expect(renderCalls.map(([card, style]) => [card.styleKey, style.key])).toEqual([
+      [smallStyle, smallStyle],
+      [bigStyle, bigStyle],
+    ]);
+    const exportOptions = (
+      exportDeckToPdfMock.mock.calls[0] as unknown as [string[], unknown, { cardWidthMm: number[] }]
+    )[2];
+    const widths = exportOptions.cardWidthMm;
+    expect(widths).toHaveLength(2);
+    expect(widths[0]).toBeCloseTo(34.9, 1);
+    expect(widths[1]).toBeCloseTo(103.4, 1);
   });
 
   it('edits the card width and height in template mode', () => {

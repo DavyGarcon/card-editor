@@ -201,8 +201,8 @@ export interface PdfPrintOptions {
 
 export interface PdfOptionsDialogProps {
   options: PdfPrintOptions;
-  /** Read-only print width derived from the active template's scale. */
-  cardWidthMm: number;
+  /** Read-only print width(s) derived from the deck's template scale(s). */
+  cardWidthMm: number | number[];
   onChange: (options: PdfPrintOptions) => void;
   onCancel: () => void;
   onGenerate: () => void;
@@ -216,6 +216,14 @@ export function PdfOptionsDialog({
   onCancel,
   onGenerate,
 }: PdfOptionsDialogProps) {
+  const widths = Array.isArray(cardWidthMm) ? cardWidthMm : [cardWidthMm];
+  const distinctWidths = Array.from(
+    new Set(widths.map((width) => Math.round(width * 10) / 10)),
+  ).sort((a, b) => a - b);
+  const widthLabel = distinctWidths.every((width) => width === distinctWidths[0])
+    ? `${distinctWidths[0]?.toFixed(1) ?? '0.0'} mm`
+    : `${distinctWidths[0].toFixed(1)} – ${distinctWidths[distinctWidths.length - 1].toFixed(1)} mm (${distinctWidths.length} tailles)`;
+
   return (
     <div style={modalBackdropStyle} onMouseDown={onCancel} role="presentation">
       <div
@@ -283,8 +291,7 @@ export function PdfOptionsDialog({
           <div>
             <span style={labelStyle}>{STRINGS.cardWidth}</span>
             <div style={{ fontSize: '13px', color: '#f8fafc' }}>
-              {cardWidthMm.toFixed(1)} mm{' '}
-              <span style={{ color: '#94a3b8' }}>(déduite du modèle et du DPI)</span>
+              {widthLabel} <span style={{ color: '#94a3b8' }}>(déduite du modèle et du DPI)</span>
             </div>
           </div>
           <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '4px' }}>
