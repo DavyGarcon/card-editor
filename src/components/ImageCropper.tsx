@@ -5,6 +5,11 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 3;
 const clampZoom = (value: number) =>
   Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
+/** Accepts "150", "150 %" or "150%" and ignores invalid/empty input. */
+const parseZoomPercent = (raw: string): number | null => {
+  const parsed = Number(raw.replace(/\s|%/g, '').replace(',', '.'));
+  return raw.trim() !== '' && Number.isFinite(parsed) ? parsed : null;
+};
 
 export interface ImageCropperProps {
   /** Image source (Data URL or external URL with CORS enabled) */
@@ -31,6 +36,8 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     image: HTMLImageElement;
   } | null>(null);
   const [zoom, setZoom] = useState<number>(1);
+  /** Raw text while the user is typing a zoom percentage. */
+  const [zoomDraft, setZoomDraft] = useState<string | null>(null);
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -104,6 +111,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
       }
       setLoadedImage({ src: imageSrc, image: img });
       setZoom(1);
+      setZoomDraft(null);
       setOffset({ x: 0, y: 0 });
     });
     return () => {
@@ -139,7 +147,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     [getBaseScale, viewportWidth, viewportHeight],
   );
 
-  // Track the pointer over the preview so zoom buttons and the slider inherit
+  // Track the pointer over the preview so zoom buttons and the zoom field inherit
   // the same anchor as the wheel. jsdom (and zero-sized layouts) keep the center fallback.
   const recordPointer = useCallback(
     (clientX: number, clientY: number, canvas: HTMLCanvasElement) => {
@@ -220,7 +228,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     setOffset((prev) => clampOffset(prev.x + dx, prev.y + dy, zoom, imageEl));
   };
 
-  // Shared zoom entry point: the slider, the buttons and the wheel all zoom
+  // Shared zoom entry point: the editable field, the buttons and the wheel all zoom
   // around the last pointed position (frame center by default), so the pixel
   // under the cursor stays put at every zoom level, including below 100%.
   const applyZoom = useCallback(
@@ -246,6 +254,31 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     [imageEl, zoom, clampOffset, viewportWidth, viewportHeight],
   );
 
+  const displayedZoom = zoomDraft ?? String(Math.round(zoom * 100));
+
+  const handleZoomTextChange = (raw: string) => {
+    setZoomDraft(raw);
+    const percent = parseZoomPercent(raw);
+    // Apply valid values as the user types; keep the raw text so partial input
+    // such as "5" (on the way to "50") is not clamped prematurely.
+    if (percent !== null && percent >= MIN_ZOOM * 100 && percent <= MAX_ZOOM * 100) {
+      applyZoom(Math.round(percent) / 100);
+    }
+  };
+
+  const commitZoomText = (raw: string) => {
+    const percent = parseZoomPercent(raw);
+    setZoomDraft(null);
+    if (percent === null) return;
+    const clamped = Math.min(MAX_ZOOM * 100, Math.max(MIN_ZOOM * 100, percent));
+    applyZoom(Math.round(clamped) / 100);
+  };
+
+  const zoomBy = (factor: number) => {
+    setZoomDraft(null);
+    applyZoom(zoom * factor);
+  };
+
   // Wheel zoom over the preview. A native listener with passive: false is
   // required to prevent the page from scrolling while zooming.
   useEffect(() => {
@@ -254,6 +287,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       recordPointer(event.clientX, event.clientY, canvas);
+      setZoomDraft(null);
       applyZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
@@ -331,29 +365,32 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
 
             <div style={styles.controls}>
               <label style={styles.zoomLabel}>
-                Zoom ({Math.round(zoom * 100)}%)
+                Zoom (%)
                 <div style={styles.zoomRow}>
                   <button
                     type="button"
                     aria-label="Dézoomer"
-                    onClick={() => applyZoom(zoom / 1.2)}
+                    onClick={() => zoomBy(1 / 1.2)}
                     style={styles.zoomButton}
                   >
                     −
                   </button>
                   <input
-                    type="range"
-                    min={MIN_ZOOM}
-                    max={MAX_ZOOM}
-                    step={0.05}
-                    value={zoom}
-                    onChange={(e) => applyZoom(Number(e.target.value))}
-                    style={styles.slider}
+                    type="text"
+                    inputMode="decimal"
+                    aria-label="Zoom (%)"
+                    value={displayedZoom}
+                    onChange={(e) => handleZoomTextChange(e.target.value)}
+                    onBlur={(e) => commitZoomText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitZoomText(e.currentTarget.value);
+                    }}
+                    style={styles.zoomInput}
                   />
                   <button
                     type="button"
                     aria-label="Zoomer"
-                    onClick={() => applyZoom(zoom * 1.2)}
+                    onClick={() => zoomBy(1.2)}
                     style={styles.zoomButton}
                   >
                     +
@@ -364,6 +401,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
                 type="button"
                 onClick={() => {
                   setZoom(1);
+                  setZoomDraft(null);
                   setOffset({ x: 0, y: 0 });
                 }}
                 style={styles.secondaryButton}
@@ -462,10 +500,16 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '6px',
   },
-  slider: {
+  zoomInput: {
     flex: 1,
+    minWidth: 0,
     width: '100%',
-    accentColor: '#f59e0b',
+    backgroundColor: '#0f172a',
+    color: '#f8fafc',
+    border: '1px solid #334155',
+    borderRadius: '4px',
+    padding: '5px 7px',
+    fontSize: '13px',
   },
   zoomButton: {
     backgroundColor: '#334155',

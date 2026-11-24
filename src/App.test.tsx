@@ -258,7 +258,7 @@ describe('App integration', () => {
     const exportGroup = screen.getByRole('group', { name: /Rendu des cartes/i });
     fireEvent.click(within(exportGroup).getByRole('button', { name: /Planche PDF/ }));
     const dialog = screen.getByRole('dialog', { name: 'Options PDF' });
-    expect(within(dialog).getByText(/34\.9 – 103\.4 mm \(2 tailles\)/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/45\.9 – 102\.5 mm \(2 tailles\)/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Générer' }));
 
     await waitFor(() => expect(exportDeckToPdfMock).toHaveBeenCalledTimes(1));
@@ -274,8 +274,8 @@ describe('App integration', () => {
     )[2];
     const widths = exportOptions.cardWidthMm;
     expect(widths).toHaveLength(2);
-    expect(widths[0]).toBeCloseTo(34.9, 1);
-    expect(widths[1]).toBeCloseTo(103.4, 1);
+    expect(widths[0]).toBeCloseTo(45.9, 1);
+    expect(widths[1]).toBeCloseTo(102.5, 1);
   });
 
   it('edits the card width and height in template mode', () => {

@@ -50,6 +50,8 @@ describe('ImageCropper', () => {
       }) as DOMRect;
   };
 
+  const zoomField = () => screen.getByRole('textbox', { name: 'Zoom (%)' });
+
   const renderLoadedCropper = async (onCropComplete = vi.fn()) => {
     loadImage.mockResolvedValue({ naturalWidth: 600, naturalHeight: 400 });
     render(<ImageCropper imageSrc="ok" onCropComplete={onCropComplete} onCancel={vi.fn()} />);
@@ -96,33 +98,33 @@ describe('ImageCropper', () => {
     const canvas = await renderLoadedCropper();
 
     fireEvent.wheel(canvas, { deltaY: -100 });
-    expect(screen.getByRole('slider')).toHaveValue('1.1');
+    expect(zoomField()).toHaveValue('110');
 
     fireEvent.wheel(canvas, { deltaY: 100 });
-    expect(screen.getByRole('slider')).toHaveValue('1');
+    expect(zoomField()).toHaveValue('100');
 
     fireEvent.wheel(canvas, { deltaY: 100 });
-    expect(screen.getByRole('slider')).toHaveValue('0.91');
+    expect(zoomField()).toHaveValue('91');
   });
 
-  it('can zoom out below 100% with the slider and the zoom buttons', async () => {
+  it('can zoom out below 100% with the editable zoom field and the zoom buttons', async () => {
     await renderLoadedCropper();
-    const slider = screen.getByRole('slider');
-    expect(slider).toHaveAttribute('min', '0.25');
 
     fireEvent.click(screen.getByRole('button', { name: 'Dézoomer' }));
-    expect(slider).toHaveValue('0.83');
+    expect(zoomField()).toHaveValue('83');
 
     fireEvent.click(screen.getByRole('button', { name: 'Zoomer' }));
-    expect(slider).toHaveValue('1');
+    expect(zoomField()).toHaveValue('100');
 
-    fireEvent.change(slider, { target: { value: '0.5' } });
-    expect(slider).toHaveValue('0.5');
+    fireEvent.change(zoomField(), { target: { value: '50%' } });
+    expect(zoomField()).toHaveValue('50%');
+    fireEvent.keyDown(zoomField(), { key: 'Enter' });
+    expect(zoomField()).toHaveValue('50');
   });
 
   it('pans the image even when zoomed below 100%', async () => {
     const canvas = await renderLoadedCropper();
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '0.5' } });
+    fireEvent.change(zoomField(), { target: { value: '50' } });
     const before = Number(drawImage.mock.calls[drawImage.mock.calls.length - 1]?.[1]);
 
     fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 180, clientY: 180 });
@@ -144,12 +146,12 @@ describe('ImageCropper', () => {
     expect(Number(drawImage.mock.calls[drawImage.mock.calls.length - 1]?.[1])).toBeCloseTo(-126, 0);
   });
 
-  it('uses the last hovered point when zooming out with the slider', async () => {
+  it('uses the last hovered point when zooming out with the zoom field', async () => {
     const canvas = await renderLoadedCropper();
     stubCanvasRect(canvas);
     fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 270, clientY: 180 });
 
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '0.5' } });
+    fireEvent.change(zoomField(), { target: { value: '50' } });
 
     // At 0.5x the 270 px-wide image is centered at x=45; the right-side anchor
     // pushes it to x=90, where its right edge touches the frame.
@@ -160,7 +162,7 @@ describe('ImageCropper', () => {
     const onCropComplete = vi.fn();
     await renderLoadedCropper(onCropComplete);
 
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '0.5' } });
+    fireEvent.change(zoomField(), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: /Appliquer le recadrage/i }));
 
     // 600 px wide image in a 360 px frame at 0.5x, exported at 600 px.
