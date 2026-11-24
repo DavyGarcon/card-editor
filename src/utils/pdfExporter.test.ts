@@ -93,10 +93,35 @@ describe('exportDeckToPdf', () => {
     expect(big[4]).toBeCloseTo(103.4, 1);
     expect(big[5]).toBeCloseTo(206.8, 1);
 
-    // A single regular grid is centred on the widest column; narrower cards
-    // are centred inside their cell rather than stretched.
-    expect(big[2]).toBeCloseTo(53.3, 1);
-    expect(small[2]).toBeCloseTo(87.6, 1);
+    // Cards are packed side by side at their real widths, so the configured
+    // 2 mm gap is the actual space between their edges (no overlap, no cell
+    // padding determined by the widest style).
+    expect(small[2]).toBeCloseTo(34.85, 2);
+    expect(big[2]).toBeCloseTo(71.75, 2);
+    expect(big[2] - (small[2] + small[4])).toBeCloseTo(2, 1);
+    // The tall card sets the row height; the short one is centred in it.
+    expect(big[3]).toBeCloseTo(45.1, 1);
+    expect(small[3]).toBeCloseTo(93, 0);
+  });
+
+  it('keeps the requested gap between cards of the same small style', async () => {
+    await exportDeckToPdf(
+      ['a', 'b', 'c'],
+      [
+        { width: 380, height: 1210 },
+        { width: 380, height: 1210 },
+        { width: 380, height: 1210 },
+      ],
+      { cardWidthMm: [34.9, 34.9, 34.9] },
+    );
+    const doc = jsPDFMock.mock.results[0].value as { addImage: ReturnType<typeof vi.fn> };
+    const [first, second, third] = doc.addImage.mock.calls;
+
+    // All three fit on one row: their edges are separated by exactly gapMm.
+    expect(second[2] - (first[2] + first[4])).toBeCloseTo(2, 1);
+    expect(third[2] - (second[2] + second[4])).toBeCloseTo(2, 1);
+    expect(first[3]).toBeCloseTo(second[3], 1);
+    expect(first[3]).toBeCloseTo(third[3], 1);
   });
 
   it('rejects a width array that does not match the deck', async () => {

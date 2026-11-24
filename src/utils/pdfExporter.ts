@@ -72,32 +72,114 @@ export async function exportDeckToPdf(
   const imageHeightsMm = ratios.map(
     (ratio, index) => Math.round(((widthsMm[index] * ratio.height) / ratio.width) * 10) / 10,
   );
-  const cellHeightMm = options.cardHeightMm ?? Math.max(...imageHeightsMm);
-  // Every column is sized for the widest card, then narrower cards are centred
-  // inside it. The grid stays regular while each card keeps its real size.
-  const columnWidthMm = Math.max(...widthsMm);
+  const cardHeight = (index: number) => options.cardHeightMm ?? imageHeightsMm[index];
 
   // Dimensions de la feuille en millimètres.
   const paper = getPaperDimensions(paperSize, orientation);
   const pageWidth = paper.widthMm;
   const pageHeight = paper.heightMm;
 
-  // Calcul automatique du nombre de colonnes et lignes par page
-  const cols = Math.max(
-    1,
-    Math.floor((pageWidth - marginMm * 2 + gapMm) / (columnWidthMm + gapMm)),
-  );
-  const rows = Math.max(
-    1,
-    Math.floor((pageHeight - marginMm * 2 + gapMm) / (cellHeightMm + gapMm)),
-  );
-  const cardsPerPage = cols * rows;
+  interface CardPlacement {
+    index: number;
+    page: number;
+    x: number;
+    y: number;
+  }
+  const placements: CardPlacement[] = [];
+  const oneSize =
+    widthsMm.every((width) => width === widthsMm[0]) &&
+    imageHeightsMm.every((height) => height === imageHeightsMm[0]);
 
-  // Centrage parfait de la grille sur la feuille
-  const gridWidth = cols * columnWidthMm + (cols - 1) * gapMm;
-  const gridHeight = rows * cellHeightMm + (rows - 1) * gapMm;
-  const startX = (pageWidth - gridWidth) / 2;
-  const startY = (pageHeight - gridHeight) / 2;
+  if (oneSize) {
+    // Uniform deck: keep the regular, centred grid used by single-style decks.
+    const cardWidth = widthsMm[0];
+    const cellHeightMm = options.cardHeightMm ?? imageHeightsMm[0];
+    const cols = Math.max(1, Math.floor((pageWidth - marginMm * 2 + gapMm) / (cardWidth + gapMm)));
+    const rows = Math.max(
+      1,
+      Math.floor((pageHeight - marginMm * 2 + gapMm) / (cellHeightMm + gapMm)),
+    );
+    const cardsPerPage = cols * rows;
+    const gridWidth = cols * cardWidth + (cols - 1) * gapMm;
+    const gridHeight = rows * cellHeightMm + (rows - 1) * gapMm;
+    const startX = (pageWidth - gridWidth) / 2;
+    const startY = (pageHeight - gridHeight) / 2;
+
+    cardDataUrls.forEach((_, index) => {
+      const indexOnPage = index % cardsPerPage;
+      const col = indexOnPage % cols;
+      const row = Math.floor(indexOnPage / cols);
+      placements.push({
+        index,
+        page: Math.floor(index / cardsPerPage),
+        x: startX + col * (cardWidth + gapMm),
+        y: startY + row * (cellHeightMm + gapMm) + (cellHeightMm - imageHeightsMm[index]) / 2,
+      });
+    });
+  } else {
+    // Mixed styles: pack cards by their real sizes. A grid sized by the widest
+    // style would leave oversized gaps (or even overlap) around small cards.
+    const usableWidth = pageWidth - marginMm * 2;
+    const usableHeight = pageHeight - marginMm * 2;
+    interface PdfRow {
+      indices: number[];
+      widthMm: number;
+      heightMm: number;
+    }
+    const pages: PdfRow[][] = [[]];
+    let pageRows = pages[0];
+    let currentRow: number[] = [];
+    let currentRowWidthMm = 0;
+
+    const finishRow = () => {
+      if (currentRow.length === 0) return;
+      const row: PdfRow = {
+        indices: currentRow,
+        widthMm: currentRowWidthMm,
+        heightMm: Math.max(...currentRow.map(cardHeight)),
+      };
+      const usedHeightMm =
+        pageRows.reduce((total, placed) => total + placed.heightMm, 0) +
+        Math.max(0, pageRows.length - 1) * gapMm;
+      if (pageRows.length > 0 && usedHeightMm + gapMm + row.heightMm > usableHeight) {
+        pageRows = [];
+        pages.push(pageRows);
+      }
+      pageRows.push(row);
+      currentRow = [];
+      currentRowWidthMm = 0;
+    };
+
+    cardDataUrls.forEach((_, index) => {
+      const nextWidthMm = currentRowWidthMm + (currentRow.length > 0 ? gapMm : 0) + widthsMm[index];
+      if (currentRow.length > 0 && nextWidthMm > usableWidth) finishRow();
+      currentRow.push(index);
+      currentRowWidthMm =
+        currentRow.length === 1 ? widthsMm[index] : currentRowWidthMm + gapMm + widthsMm[index];
+    });
+    finishRow();
+
+    pages.forEach((rows, pageIndex) => {
+      const gridHeightMm =
+        rows.reduce((total, row) => total + row.heightMm, 0) + Math.max(0, rows.length - 1) * gapMm;
+      let rowY = (pageHeight - gridHeightMm) / 2;
+
+      rows.forEach((row) => {
+        let cardX = (pageWidth - row.widthMm) / 2;
+        row.indices.forEach((index) => {
+          placements.push({
+            index,
+            page: pageIndex,
+            x: cardX,
+            // A card shorter than its row is centred vertically, never stretched.
+            y: rowY + (row.heightMm - imageHeightsMm[index]) / 2,
+          });
+          cardX += widthsMm[index] + gapMm;
+        });
+        rowY += row.heightMm + gapMm;
+      });
+    });
+  }
 
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({
@@ -106,27 +188,18 @@ export async function exportDeckToPdf(
     format: paperSize,
   });
 
-  cardDataUrls.forEach((dataUrl, index) => {
-    // Ajouter une nouvelle feuille quand la grille est pleine
-    if (index > 0 && index % cardsPerPage === 0) {
+  let currentPage = 0;
+  placements.forEach((placement) => {
+    if (placement.page > currentPage) {
       doc.addPage();
+      currentPage = placement.page;
     }
-
-    const indexOnPage = index % cardsPerPage;
-    const col = indexOnPage % cols;
-    const row = Math.floor(indexOnPage / cols);
-
-    const cellX = startX + col * (columnWidthMm + gapMm);
-    const cellY = startY + row * (cellHeightMm + gapMm);
+    const { index, x, y } = placement;
     const cardWidth = widthsMm[index];
     const imageHeight = imageHeightsMm[index];
-    // Mixed styles can differ in both width and ratio: centre the real card in
-    // its cell instead of stretching it to the cell or to the active style.
-    const x = cellX + (columnWidthMm - cardWidth) / 2;
-    const y = cellY + (cellHeightMm - imageHeight) / 2;
 
     // 1. Dessiner l'image haute résolution de la carte à sa taille réelle.
-    doc.addImage(dataUrl, 'PNG', x, y, cardWidth, imageHeight, undefined, 'FAST');
+    doc.addImage(cardDataUrls[index], 'PNG', x, y, cardWidth, imageHeight, undefined, 'FAST');
 
     // 2. Dessiner les traits de coupe aux 4 coins de la carte imprimée
     if (drawCropMarks) {
