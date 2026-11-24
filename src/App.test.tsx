@@ -71,6 +71,13 @@ vi.mock('./io/templateIO', async (importOriginal) => {
 
 import App from './App';
 
+/** Load a built-in pack through the same selector + refresh flow as a user. */
+function loadBuiltInTemplate(id: string) {
+  const picker = screen.getByRole('combobox', { name: 'Template intégré' }) as HTMLSelectElement;
+  fireEvent.change(picker, { target: { value: id } });
+  fireEvent.click(screen.getByRole('button', { name: 'Recharger le template intégré' }));
+}
+
 describe('App integration', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -84,10 +91,15 @@ describe('App integration', () => {
     render(<App />);
     const picker = screen.getByRole('combobox', { name: 'Template intégré' }) as HTMLSelectElement;
     expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
+      'JDR Pack',
       'Template Pack Example',
     ]);
     // Alphabetically first template is the one loaded by default.
     expect(picker.value).toBe(picker.options[0].value);
+
+    // The checks below rely on the example pack's fields (e.g. `title`), so
+    // load it explicitly instead of relying on the default pick.
+    loadBuiltInTemplate('examplePack');
 
     expect(screen.queryByRole('group', { name: 'Sauvegarde du template' })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Sauvegarde du deck' })).toBeInTheDocument();
@@ -171,11 +183,13 @@ describe('App integration', () => {
 
   it('loads a built-in pack with all its styles only via the refresh button next to the select', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
 
     const picker = screen.getByRole('combobox', { name: 'Template intégré' }) as HTMLSelectElement;
     const refresh = screen.getByRole('button', { name: 'Recharger le template intégré' });
     expect(picker.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const examplePackValue = picker.value;
 
     // Selecting a pack only changes the choice; the loaded pack is untouched.
     const width = screen.getByRole('spinbutton', { name: 'Largeur carte (px)' });
@@ -188,6 +202,8 @@ describe('App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: /\+ Nouveau Style/ }));
     expect(screen.getByText('Style actif (4)')).toBeInTheDocument();
 
+    // Select the example pack again so the refresh restores it (and its 375 px card).
+    fireEvent.change(picker, { target: { value: examplePackValue } });
     fireEvent.click(refresh);
     expect(screen.getByRole('spinbutton', { name: 'Largeur carte (px)' })).toHaveValue(375);
     expect(screen.getByText('Style actif (3)')).toBeInTheDocument();
@@ -211,6 +227,7 @@ describe('App integration', () => {
 
   it('opens the PDF options dialog from the PDF export button in card mode', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     const exportGroup = screen.getByRole('group', { name: /Rendu des cartes/i });
@@ -280,6 +297,7 @@ describe('App integration', () => {
 
   it('edits the card width and height in template mode', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     expect(
       screen.queryByRole('spinbutton', { name: 'Largeur carte (px)' }),
     ).not.toBeInTheDocument();
@@ -298,6 +316,7 @@ describe('App integration', () => {
 
   it('links image sources in template mode and edits them once in card mode', async () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
     fireEvent.click(screen.getByRole('button', { name: /\+ Image$/ }));
 
@@ -314,14 +333,16 @@ describe('App integration', () => {
     );
     expect(target).toBeDefined();
     fireEvent.change(link, { target: { value: target!.value } });
-    expect(screen.getByText(/Source partagée — 2 images/)).toBeInTheDocument();
+    // The example pack's active style already has two linked images; the new
+    // layer joins that group, making it three members with a single source.
+    expect(screen.getByText(/Source partagée — 3 images/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Cartes' }));
     expect(screen.queryByRole('combobox', { name: 'Image liée à' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
     const sharedInput = document.getElementById('card-field-image') as HTMLInputElement;
     expect(sharedInput).toBeInTheDocument();
-    expect(sharedInput.closest('div')?.parentElement).toHaveTextContent('Source partagée (2)');
+    expect(sharedInput.closest('div')?.parentElement).toHaveTextContent('Source partagée (3)');
     fireEvent.change(sharedInput, { target: { value: 'https://example.com/shared.png' } });
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
@@ -383,6 +404,7 @@ describe('App integration', () => {
 
   it('duplicates a component from the tree with its current settings', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
     const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
     const rowsBefore = within(tree).getAllByRole('option');
@@ -430,6 +452,7 @@ describe('App integration', () => {
 
   it('edits the default value of a select field in template mode', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
 
     // A newly added select is editable in card mode, but its default must
@@ -455,6 +478,7 @@ describe('App integration', () => {
 
   it('scales the whole card instead of clipping it when zoomed out', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Zoom (%)' }), {
       target: { value: '50' },
     });
@@ -500,6 +524,7 @@ describe('App integration', () => {
 
   it('saves a new inheriting style with no local copy of the parent fields', async () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
     fireEvent.click(screen.getByRole('button', { name: /\+ Nouveau Style/ }));
 
@@ -524,6 +549,7 @@ describe('App integration', () => {
 
   it('saves only edited and added fields in a basedOn style', async () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
     fireEvent.click(screen.getByRole('button', { name: /\+ Variante \(basedOn\)/ }));
 
@@ -547,6 +573,7 @@ describe('App integration', () => {
 
   it('hides a component from the Card preview while keeping its value editable', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     expect(screen.getByRole('textbox', { name: 'Titre' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Template' }));
@@ -578,6 +605,7 @@ describe('App integration', () => {
 
   it('does not hijack Ctrl+Z while typing in a field', () => {
     render(<App />);
+    loadBuiltInTemplate('examplePack');
     const input = screen.getByRole('textbox', { name: 'Titre' }) as HTMLTextAreaElement;
     const before = input.value;
     fireEvent.keyDown(input, { key: 'z', ctrlKey: true });

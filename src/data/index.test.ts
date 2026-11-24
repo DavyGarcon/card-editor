@@ -3,7 +3,10 @@ import { BUILT_IN_TEMPLATES } from './index';
 
 describe('built-in templates', () => {
   it('discovers every JSON template in src/data, alphabetically by pack name', () => {
-    expect(BUILT_IN_TEMPLATES.map((template) => template.id)).toEqual(['examplePack']);
+    expect(BUILT_IN_TEMPLATES.map((template) => template.id)).toEqual([
+      'jdr-pack-template',
+      'examplePack',
+    ]);
     const names = BUILT_IN_TEMPLATES.map((template) => template.pack.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'fr')));
   });

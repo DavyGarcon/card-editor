@@ -39,7 +39,6 @@
             "zOnly": false,
             "fontSize": 16,
             "opacity": 1,
-            "defaultValue": "",
             "linkedTo": "image",
             "color": "#ffffff",
             "fill": "#0f172a",
