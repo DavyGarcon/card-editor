@@ -3,13 +3,9 @@ name: CI
 on:
   push:
     branches: [develop, 'feature/**']
-    tags: ['**']
-  pull_request:
-  workflow_dispatch:
 
 jobs:
   check:
-    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,49 +15,4 @@ jobs:
           cache: npm
       - run: npm install
       - run: npm run lint
-        if: github.ref_type != 'tag'
       - run: npm test
-        if: github.ref_type != 'tag'
-      - run: npm run build
-        if: github.ref_type == 'tag'
-
-  release:
-    # Start this workflow manually from the develop branch.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Squash-merge develop into main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main develop --tags
-          git checkout -B main origin/main
-          git merge --squash origin/develop
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: merge develop into main"
-          else
-            echo "No changes to merge from develop."
-          fi
-          git push origin main
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build
-        run: npm run build
-
-      - name: Create version tag
-        run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          git tag "v${VERSION}"
-          git push origin "v${VERSION}"
