@@ -289,7 +289,7 @@ Every color property (`backgroundColor`, `borderColor`, `color`, `fill`, `stroke
 
 ## Saving & Loading
 
-Templates and decks are intentionally the only two save/load notions — different files and different control groups. Template pack save/load buttons sit below the built-in template and active-style selectors; deck save/load buttons stay with the deck. There is no document autosave, no localStorage session, no recovery banner, and no pagehide flush: on launch/refresh only the `*.json` templates in `src/data` are available and the deck is empty. IndexedDB caches uploaded image blobs only for the editing session; saved files embed those images as inline `data:image/...` base64 URLs instead of `idb:` references, so the JSON works on another machine without that database. IndexedDB never restores a template or deck.
+Templates and decks are intentionally the only two explicit save/load notions — different files and different control groups. Template pack save/load buttons sit below the built-in template and active-style selectors; deck save/load buttons stay with the deck. In addition, every change to the pack (styles and layers) or the deck (cards and values), including selection/mode changes, is autosaved to `localStorage` under `modern-geckos-workspace-v1` and restored on launch/refresh. A corrupt or incompatible autosave is ignored and falls back to the built-in template with an empty deck. IndexedDB stores uploaded image blobs as `idb:` refs used by both the session and the autosave; exported files embed those images as inline `data:image/...` base64 URLs instead, so the JSON works on another machine without that database.
 
 | Content                        | Downloaded file                       |
 | ------------------------------ | ------------------------------------- |
@@ -385,7 +385,8 @@ src/
 │   ├── formats.ts             # Format identifiers and filename helpers
 │   ├── imageEmbedding.ts      # Replaces `idb:` refs with inline Data URLs on save
 │   ├── imageStore.ts          # IndexedDB artwork blobs + `idb:` refs
-│   └── templateIO.ts          # Template file format
+│   ├── templateIO.ts          # Template file format
+│   └── workspaceStorage.ts    # Autosave/restore of the whole editor session
 ├── data/
 │   ├── index.ts               # Discovers non-test `*.json` templates in `src/data`
 │   └── examplePack.json       # Built-in template session (pack used at startup)

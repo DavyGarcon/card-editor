@@ -145,18 +145,18 @@
     overflow: visible;
   }
 
-  /* Show the card first on phones; the long detail forms follow. */
-  .stage-area {
+  /* Keep deck/style controls above the card on phones; details follow. */
+  .sidebar-left {
+    max-height: none;
     order: 1;
+  }
+
+  .stage-area {
+    order: 2;
     width: 100%;
     min-height: 50vh;
     padding: 8px;
     justify-content: flex-start;
-  }
-
-  .sidebar-left {
-    max-height: none;
-    order: 2;
   }
 
   .sidebar-right {

@@ -70,6 +70,8 @@ vi.mock('./io/templateIO', async (importOriginal) => {
 });
 
 import App from './App';
+import { BUILT_IN_TEMPLATES } from './data';
+import { WORKSPACE_FORMAT, WORKSPACE_STORAGE_KEY } from './io/workspaceStorage';
 
 /** Load a built-in pack through the same selector + refresh flow as a user. */
 function loadBuiltInTemplate(id: string) {
@@ -164,21 +166,53 @@ describe('App integration', () => {
     expect(screen.queryByText(/Éditeur de Template/i)).not.toBeInTheDocument();
   });
 
-  it('ignores stored sessions on refresh: no deck and only built-in templates', () => {
+  it('restores the autosaved workspace on refresh', () => {
+    const template = BUILT_IN_TEMPLATES.find((item) => item.id === 'examplePack');
+    expect(template).toBeDefined();
+    const pack = structuredClone(template!.pack);
     localStorage.setItem(
-      'modern-geckos-deck-v1',
+      WORKSPACE_STORAGE_KEY,
       JSON.stringify({
-        format: 'modern-geckos-deck',
-        cards: [{ id: 'x', styleKey: 'spell_fire', values: {} }],
+        format: WORKSPACE_FORMAT,
+        version: 1,
+        pack,
+        cards: [
+          {
+            id: 'restored-card',
+            styleKey: pack.styles[0].key,
+            values: { title: 'Carte restaurée' },
+          },
+        ],
+        activeStyleKey: pack.styles[0].key,
+        activeCardId: 'restored-card',
+        selectedFieldId: 'title',
+        mode: 'card',
       }),
     );
-    localStorage.setItem(
-      'modern-geckos-template-v1',
-      JSON.stringify({ format: 'modern-geckos-template', pack: { name: 'Ancien', styles: [] } }),
-    );
     render(<App />);
-    expect(screen.getByText('Deck (0)')).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Ancien' })).not.toBeInTheDocument();
+    expect(screen.getByText('Deck (1)')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Titre' })).toHaveValue('Carte restaurée');
+  });
+
+  it('autosaves pack/style and card changes to localStorage', async () => {
+    render(<App />);
+    loadBuiltInTemplate('examplePack');
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Titre' }), {
+      target: { value: 'Autosave' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Largeur carte (px)' }), {
+      target: { value: '500' },
+    });
+
+    await waitFor(() => expect(localStorage.getItem(WORKSPACE_STORAGE_KEY)).not.toBeNull());
+    const stored = JSON.parse(localStorage.getItem(WORKSPACE_STORAGE_KEY) ?? '{}');
+    expect(stored.format).toBe(WORKSPACE_FORMAT);
+    expect(stored.cards).toHaveLength(1);
+    expect(stored.cards[0].values.title).toBe('Autosave');
+    expect(stored.mode).toBe('template');
+    expect(stored.pack.styles.some((style: { width?: number }) => style.width === 500)).toBe(true);
   });
 
   it('loads a built-in pack with all its styles only via the refresh button next to the select', () => {

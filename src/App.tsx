@@ -59,7 +59,8 @@ import { loadTemplateFile, saveTemplateFile, type TemplateSession } from './io/t
 import { loadDeckFile, saveDeckFile, type DeckSession } from './io/deckIO';
 import { isImageRef, pruneImages, storeImageDataUrl } from './io/imageStore';
 import { slugify } from './io/formats';
-import { useUndoableDocument } from './hooks/useUndoableDocument';
+import { loadWorkspace, saveWorkspace } from './io/workspaceStorage';
+import { useUndoableDocument, type DocumentSnapshot } from './hooks/useUndoableDocument';
 import { BUILT_IN_TEMPLATES, EMPTY_PACK } from './data';
 import { STRINGS } from './i18n/strings';
 import { clampNumber } from './utils/numbers';
@@ -110,10 +111,22 @@ function applyFieldUpdates(
   };
 }
 
+/** Fresh-launch document, used only when there is no usable autosave. */
+function createDefaultSnapshot(): DocumentSnapshot {
+  const template = BUILT_IN_TEMPLATES[0]?.pack ?? EMPTY_PACK;
+  return {
+    pack: structuredClone(template),
+    cards: [],
+    activeStyleKey: template.activeStyleKey || template.styles[0]?.key || '',
+    activeCardId: '',
+    selectedFieldId: 'title',
+    mode: 'card',
+  };
+}
+
 export default function App() {
-  // Startup and refresh always use the packs shipped in src/data. Decks are
-  // never restored: they only exist after the user loads one explicitly.
-  const initialTemplate = BUILT_IN_TEMPLATES[0]?.pack ?? EMPTY_PACK;
+  // Every document change is autosaved, so a refresh restores the last edit.
+  const [initialSnapshot] = useState(() => loadWorkspace() ?? createDefaultSnapshot());
   const {
     pack,
     setPack,
@@ -129,15 +142,13 @@ export default function App() {
     resetDocument,
     undo,
     redo,
-  } = useUndoableDocument({
-    pack: structuredClone(initialTemplate),
-    cards: [],
-    activeStyleKey: initialTemplate.activeStyleKey || initialTemplate.styles[0]?.key || '',
-    activeCardId: '',
-    selectedFieldId: 'title',
-    mode: 'card',
+  } = useUndoableDocument(initialSnapshot);
+  const [activeTemplateId, setActiveTemplateId] = useState(() => {
+    const builtIn = BUILT_IN_TEMPLATES.find(
+      (template) => template.pack.name === initialSnapshot.pack.name,
+    );
+    return builtIn?.id ?? '';
   });
-  const [activeTemplateId, setActiveTemplateId] = useState(BUILT_IN_TEMPLATES[0]?.id ?? '');
   const [pdfOptions, setPdfOptions] = useState<PdfPrintOptions>({
     paperSize: 'a4',
     orientation: 'portrait',
@@ -181,6 +192,12 @@ export default function App() {
     viewport.addEventListener('wheel', onWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', onWheel);
   }, []);
+
+  // Autosave on every document mutation: pack/styles/fields, cards/deck, and
+  // the active selections. Image refs stay in IndexedDB, so this is cheap.
+  useEffect(() => {
+    saveWorkspace({ pack, cards, activeStyleKey, activeCardId, selectedFieldId, mode });
+  }, [pack, cards, activeStyleKey, activeCardId, selectedFieldId, mode]);
 
   const activeCard = cards.find((c) => c.id === activeCardId) || cards[0];
   // One style selection for both modes: choosing a card selects its style, and
