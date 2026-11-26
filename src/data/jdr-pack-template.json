@@ -328,10 +328,118 @@
         ],
         "width": 1115,
         "height": 2220
+      },
+      {
+        "key": "style_1795714872147",
+        "name": "Décors (  -> 10,20 m )",
+        "fields": [
+          {
+            "id": "field_1795715089261",
+            "type": "image",
+            "label": "Illustration",
+            "x": 5,
+            "y": 5,
+            "width": 1605,
+            "height": 2270,
+            "rotation": 0,
+            "flipX": false,
+            "flipY": false,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left"
+          },
+          {
+            "id": "field_1795715089261_copy",
+            "type": "image",
+            "label": "Illustration (Copie)",
+            "x": 3220,
+            "y": 5,
+            "width": 1605,
+            "height": 2270,
+            "rotation": 0,
+            "flipX": true,
+            "flipY": false,
+            "z": 0.5,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "defaultValue": "",
+            "linkedTo": "field_1795715089261",
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left"
+          },
+          {
+            "id": "title",
+            "type": "text",
+            "label": "Nouveau Texte",
+            "x": 45,
+            "y": 160,
+            "width": 260,
+            "height": 38,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left",
+            "hidden": true
+          }
+        ],
+        "width": 3230,
+        "height": 2280,
+        "backgroundColor": "transparent",
+        "borderColor": "transparent"
+      },
+      {
+        "key": "style_1795722968888",
+        "name": "Paysage ( -> 10.20 m)",
+        "fields": [
+          {
+            "id": "field_1795723049179",
+            "type": "image",
+            "label": "Illustration",
+            "x": 5,
+            "y": 5,
+            "width": 3220,
+            "height": 2270,
+            "zOnly": false,
+            "fontSize": 16,
+            "opacity": 1,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left",
+            "script": "if (card.reverse === 'true'){ \nreturn { flipX: true , x: field.width} ;\n}\n\nreturn   {};\n"
+          },
+          {
+            "id": "reverse",
+            "label": "Miroir ( H )",
+            "type": "checkbox",
+            "x": 45,
+            "y": 160,
+            "width": 260,
+            "height": 32,
+            "fontSize": 16,
+            "color": "#ffffff",
+            "fill": "#0f172a",
+            "align": "left",
+            "opacity": 1,
+            "defaultValue": "false",
+            "hidden": true,
+            "zOnly": false
+          }
+        ],
+        "width": 3230,
+        "height": 2280,
+        "backgroundColor": "transparent",
+        "borderColor": "transparent"
       }
     ],
-    "activeStyleKey": "perso"
+    "activeStyleKey": "style_1795714872147"
   },
-  "activeStyleKey": "perso",
+  "activeStyleKey": "style_1795714872147",
   "mode": "template"
 }

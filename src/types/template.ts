@@ -1,4 +1,12 @@
-export type FieldType = 'text' | 'box' | 'select' | 'image' | 'richtext';
+export type FieldType = 'text' | 'box' | 'select' | 'image' | 'richtext' | 'checkbox';
+
+/** Card values are strings for every field type; a checked box stores "true". */
+export const CHECKBOX_CHECKED_VALUE = 'true';
+export const CHECKBOX_UNCHECKED_VALUE = 'false';
+
+export function isCheckboxChecked(value: string | undefined): boolean {
+  return value === CHECKBOX_CHECKED_VALUE;
+}
 
 export interface SelectOption {
   value: string;
@@ -16,7 +24,10 @@ export interface TemplateField {
   z?: number;
   /** Local override that changes only the stacking order of an inherited field. */
   zOnly?: boolean;
-  /** For "richtext" fields this holds an HTML string (bold/italic/underline/lists). */
+  /**
+   * For "richtext" fields this holds an HTML string (bold/italic/underline/lists).
+   * For "checkbox" fields this is "true" when checked, "false" otherwise.
+   */
   defaultValue?: string;
   // Text & Select styling
   fontSize?: number;
@@ -33,7 +44,7 @@ export interface TemplateField {
   rotation?: number;
   flipX?: boolean;
   flipY?: boolean;
-  // Box styling
+  // Box styling. Also used as the checkbox square's background.
   fill?: string;
   // Select options
   options?: SelectOption[];

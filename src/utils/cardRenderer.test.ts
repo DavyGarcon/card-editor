@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 const konvaState = vi.hoisted(() => ({
   images: [] as Array<{ image: { src?: string } }>,
+  lines: [] as Array<{ points: number[] }>,
 }));
 
 vi.mock('konva', () => {
@@ -18,6 +19,12 @@ vi.mock('konva', () => {
       konvaState.images.push(config);
     }
   }
+  class MockLine extends MockNode {
+    constructor(config: Record<string, unknown>) {
+      super(config);
+      konvaState.lines.push(config as { points: number[] });
+    }
+  }
   class MockStage extends MockNode {
     toDataURL() {
       return 'data:image/png;base64,AAAA';
@@ -29,6 +36,7 @@ vi.mock('konva', () => {
       Group: MockNode,
       Image: MockImage,
       Layer: MockNode,
+      Line: MockLine,
       Rect: MockNode,
       Stage: MockStage,
       Text: MockNode,
@@ -112,5 +120,44 @@ describe('renderCardToDataUrl linked images', () => {
     await renderCardToDataUrl(card, withHidden);
 
     expect(konvaState.images).toHaveLength(2);
+  });
+});
+
+describe('renderCardToDataUrl checkbox', () => {
+  const checkboxStyle = {
+    ...style,
+    fields: [
+      {
+        id: 'accepted',
+        label: 'Accepté',
+        type: 'checkbox',
+        x: 10,
+        y: 20,
+        width: 120,
+        height: 32,
+        defaultValue: 'false',
+      },
+    ],
+  } as ResolvedCardStyle;
+
+  it('draws a check mark only when the stored value is "true"', async () => {
+    konvaState.lines.length = 0;
+    const card = { id: 'card-1', styleKey: 'base', values: { accepted: 'true' } } as CardData;
+
+    await renderCardToDataUrl(card, checkboxStyle);
+
+    expect(konvaState.lines).toHaveLength(1);
+    expect(konvaState.lines[0].points).toHaveLength(6);
+
+    konvaState.lines.length = 0;
+    await renderCardToDataUrl(
+      { ...card, values: { accepted: 'false' } } as CardData,
+      checkboxStyle,
+    );
+    expect(konvaState.lines).toHaveLength(0);
+
+    // Missing card values fall back to the template default (unchecked).
+    await renderCardToDataUrl({ ...card, values: {} } as CardData, checkboxStyle);
+    expect(konvaState.lines).toHaveLength(0);
   });
 });

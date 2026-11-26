@@ -510,6 +510,44 @@ describe('App integration', () => {
     expect(screen.getByRole('combobox', { name: 'Valeur par défaut (Template)' })).toHaveValue('1');
   });
 
+  it('adds a checkbox component, saves it and toggles its value in card mode', async () => {
+    render(<App />);
+    loadBuiltInTemplate('examplePack');
+    fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Case à cocher' }));
+
+    const tree = screen.getByRole('listbox', { name: 'Arborescence des composants' });
+    expect(
+      within(tree)
+        .getAllByRole('option')
+        .filter((option) => option.textContent?.includes('Case à cocher')),
+    ).toHaveLength(1);
+
+    const templateToggle = screen.getByRole('checkbox', {
+      name: 'État coché par défaut (Template)',
+    });
+    expect(templateToggle).not.toBeChecked();
+    fireEvent.click(templateToggle);
+    expect(templateToggle).toBeChecked();
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saveTemplateFile).toHaveBeenCalledTimes(1));
+    const saved = saveTemplateFile.mock.calls[0][0] as {
+      pack: { styles: Array<{ fields: Array<{ type: string; defaultValue?: string }> }> };
+    };
+    expect(
+      saved.pack.styles.some((style) => style.fields.some((field) => field.type === 'checkbox')),
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cartes' }));
+    fireEvent.click(screen.getByRole('button', { name: /Ajouter une Carte/i }));
+    const cardToggle = screen.getByRole('checkbox', { name: 'Case à cocher' });
+    // New cards inherit the template default.
+    expect(cardToggle).toBeChecked();
+    fireEvent.click(cardToggle);
+    expect(cardToggle).not.toBeChecked();
+  });
+
   it('scales the whole card instead of clipping it when zoomed out', () => {
     render(<App />);
     loadBuiltInTemplate('examplePack');

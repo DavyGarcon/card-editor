@@ -2,13 +2,15 @@ import {
   CardData,
   CardStyleDefinition,
   CardTemplatePack,
+  CHECKBOX_CHECKED_VALUE,
+  CHECKBOX_UNCHECKED_VALUE,
   FieldType,
   TemplateField,
 } from '../types/template';
 import { resolveCardStyle } from './styleResolver';
 import { sanitizeRichText } from './sanitize';
 
-const FIELD_TYPES: FieldType[] = ['text', 'box', 'select', 'image', 'richtext'];
+const FIELD_TYPES: FieldType[] = ['text', 'box', 'select', 'image', 'richtext', 'checkbox'];
 
 // Imported files are untrusted: keep geometry and payload sizes bounded so a
 // malformed pack cannot freeze the tab or exhaust browser storage.
@@ -139,7 +141,20 @@ function validateField(input: unknown, path: string, partial = false): TemplateF
           ? MAX_VALUE_LENGTH
           : MAX_DEFAULT_VALUE_LENGTH;
     const defaultValue = requireShortString(input.defaultValue, `${path}.defaultValue`, limit);
-    field.defaultValue = field.type === 'richtext' ? sanitizeRichText(defaultValue) : defaultValue;
+    if (
+      field.type === 'checkbox' &&
+      defaultValue !== '' &&
+      defaultValue !== CHECKBOX_CHECKED_VALUE &&
+      defaultValue !== CHECKBOX_UNCHECKED_VALUE
+    ) {
+      throw new Error(`${path}.defaultValue doit être "true" ou "false" pour une case à cocher.`);
+    }
+    field.defaultValue =
+      field.type === 'checkbox'
+        ? defaultValue || CHECKBOX_UNCHECKED_VALUE
+        : field.type === 'richtext'
+          ? sanitizeRichText(defaultValue)
+          : defaultValue;
   }
   if (input.linkedTo !== undefined) {
     if (field.type !== 'image') {

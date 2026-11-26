@@ -30,11 +30,15 @@ import {
   Image as ImageIcon,
   GitBranch,
   Copy,
+  SquareCheck,
 } from 'lucide-react';
 import {
   CardStyleDefinition,
   CardTemplatePack,
+  CHECKBOX_CHECKED_VALUE,
+  CHECKBOX_UNCHECKED_VALUE,
   FieldType,
+  isCheckboxChecked,
   SelectOption,
   TemplateField,
 } from './types/template';
@@ -618,6 +622,7 @@ export default function App() {
       select: 'Liste Déroulante',
       image: 'Illustration',
       richtext: 'Texte Riche',
+      checkbox: STRINGS.checkbox,
     };
     const newField: TemplateField = {
       id: newId,
@@ -626,7 +631,16 @@ export default function App() {
       x: 45,
       y: 160,
       width: 260,
-      height: type === 'richtext' ? 120 : type === 'image' ? 140 : type === 'box' ? 90 : 38,
+      height:
+        type === 'richtext'
+          ? 120
+          : type === 'image'
+            ? 140
+            : type === 'box'
+              ? 90
+              : type === 'checkbox'
+                ? 32
+                : 38,
       fontSize: 16,
       color: type === 'box' ? '#475569' : '#ffffff',
       fill: '#0f172a',
@@ -641,6 +655,7 @@ export default function App() {
             ],
           }
         : {}),
+      ...(type === 'checkbox' ? { defaultValue: CHECKBOX_UNCHECKED_VALUE } : {}),
     };
 
     setDocument({
@@ -1728,6 +1743,21 @@ export default function App() {
                         </select>
                       )}
 
+                      {field.type === 'checkbox' && (
+                        <input
+                          id={fieldInputId}
+                          type="checkbox"
+                          checked={isCheckboxChecked(currentVal)}
+                          onChange={(e) =>
+                            updateCardValue(
+                              field.id,
+                              e.target.checked ? CHECKBOX_CHECKED_VALUE : CHECKBOX_UNCHECKED_VALUE,
+                            )
+                          }
+                          style={{ width: 18, height: 18, accentColor: '#38bdf8' }}
+                        />
+                      )}
+
                       {field.type === 'image' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <label
@@ -1923,6 +1953,12 @@ export default function App() {
                   >
                     <PenTool size={14} /> + Richtext
                   </button>
+                  <button
+                    onClick={() => addTemplateField('checkbox')}
+                    style={{ ...toolBtnStyle, padding: '6px 8px', fontSize: '12px' }}
+                  >
+                    <SquareCheck size={14} /> + {STRINGS.checkbox}
+                  </button>
                 </div>
                 <div
                   role="listbox"
@@ -1956,7 +1992,9 @@ export default function App() {
                               ? Square
                               : field.type === 'richtext'
                                 ? PenTool
-                                : Type;
+                                : field.type === 'checkbox'
+                                  ? SquareCheck
+                                  : Type;
                       const isSelected = selectedFieldId === field.id;
 
                       return (
@@ -2463,6 +2501,45 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* Default checked state for checkbox fields */}
+                  {selectedField.type === 'checkbox' && (
+                    <div
+                      style={{
+                        background: '#1e293b',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          id="checkbox-default-value"
+                          type="checkbox"
+                          checked={isCheckboxChecked(selectedField.defaultValue)}
+                          onChange={(e) =>
+                            updateFieldProps(selectedField.id, {
+                              defaultValue: e.target.checked
+                                ? CHECKBOX_CHECKED_VALUE
+                                : CHECKBOX_UNCHECKED_VALUE,
+                            })
+                          }
+                          style={{ width: 16, height: 16 }}
+                        />
+                        <label
+                          htmlFor="checkbox-default-value"
+                          style={{ ...labelStyle, marginBottom: 0 }}
+                        >
+                          {STRINGS.checkboxDefaultState}
+                        </label>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        Valeur utilisée pour les nouvelles cartes et l'aperçu du template.
+                      </div>
+                    </div>
+                  )}
+
                   {/* Image Link, Opacity & Default URL */}
                   {selectedField.type === 'image' && selectedImageSource && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -2579,7 +2656,8 @@ export default function App() {
                   {/* Text & Select Typography */}
                   {(selectedField.type === 'text' ||
                     selectedField.type === 'select' ||
-                    selectedField.type === 'richtext') && (
+                    selectedField.type === 'richtext' ||
+                    selectedField.type === 'checkbox') && (
                     <>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>
@@ -2692,10 +2770,18 @@ export default function App() {
                             min={0}
                             max={100}
                             step={0.5}
-                            value={selectedField.strokeWidth ?? 0}
+                            value={
+                              selectedField.strokeWidth ??
+                              (selectedField.type === 'checkbox' ? 2 : 0)
+                            }
                             onChange={(e) =>
                               updateFieldProps(selectedField.id, {
-                                strokeWidth: clampNumber(e.target.value, 0, 0, 100),
+                                strokeWidth: clampNumber(
+                                  e.target.value,
+                                  selectedField.type === 'checkbox' ? 2 : 0,
+                                  0,
+                                  100,
+                                ),
                               })
                             }
                             style={inputStyle}
@@ -2708,6 +2794,14 @@ export default function App() {
                         onChange={(stroke) => updateFieldProps(selectedField.id, { stroke })}
                       />
                     </>
+                  )}
+
+                  {selectedField.type === 'checkbox' && (
+                    <ColorPicker
+                      label={STRINGS.checkboxFill}
+                      value={selectedField.fill || '#0f172a'}
+                      onChange={(fill) => updateFieldProps(selectedField.id, { fill })}
+                    />
                   )}
 
                   {selectedField.type === 'box' && (

@@ -351,6 +351,56 @@ describe('validateTemplatePack', () => {
     });
     expect(result.styles[0].fields[0].defaultValue).toBe(imageData);
   });
+
+  it('accepts checkbox fields and normalizes their default value', () => {
+    const checkbox = {
+      id: 'accepted',
+      label: 'Accepté',
+      type: 'checkbox',
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 32,
+      defaultValue: '',
+    };
+    const result = validateTemplatePack({
+      ...pack,
+      styles: [{ ...pack.styles[0], fields: [checkbox] }],
+    });
+    expect(result.styles[0].fields[0].type).toBe('checkbox');
+    expect(result.styles[0].fields[0].defaultValue).toBe('false');
+
+    const checked = validateTemplatePack({
+      ...pack,
+      styles: [{ ...pack.styles[0], fields: [{ ...checkbox, defaultValue: 'true' }] }],
+    });
+    expect(checked.styles[0].fields[0].defaultValue).toBe('true');
+  });
+
+  it('rejects an invalid checkbox default value', () => {
+    expect(() =>
+      validateTemplatePack({
+        ...pack,
+        styles: [
+          {
+            ...pack.styles[0],
+            fields: [
+              {
+                id: 'accepted',
+                label: 'Accepté',
+                type: 'checkbox',
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 32,
+                defaultValue: 'maybe',
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow(/case à cocher/);
+  });
 });
 
 describe('validateDeck', () => {
@@ -395,5 +445,13 @@ describe('validateDeck', () => {
       [],
     );
     expect(cards[0].values.art).toBe(imageData);
+  });
+
+  it('keeps checkbox values as strings', () => {
+    const cards = validateDeck(
+      { cards: [{ id: '1', styleKey: 'base', values: { accepted: 'true' } }] },
+      [],
+    );
+    expect(cards[0].values.accepted).toBe('true');
   });
 });

@@ -1,6 +1,7 @@
 import Konva from 'konva';
-import { CardData, ResolvedCardStyle } from '../types/template';
+import { CardData, isCheckboxChecked, ResolvedCardStyle } from '../types/template';
 import { evaluateFieldScript } from './scriptEvaluator';
+import { getCheckboxGeometry } from './checkbox';
 import { parseRichTextToSegments } from '../components/RichTextEditor';
 import { layoutRichText } from './richTextLayout';
 import { resolveImageRef } from '../io/imageStore';
@@ -124,6 +125,51 @@ export async function renderCardToDataUrl(
             opacity,
           }),
         );
+        continue;
+      }
+
+      if (field.type === 'checkbox') {
+        const { boxSize, gap, labelWidth, checkPoints } = getCheckboxGeometry(width, height);
+        const group = new Konva.Group({ x, y, width, height, ...transform, opacity });
+        group.add(
+          new Konva.Rect({
+            width: boxSize,
+            height: boxSize,
+            fill,
+            stroke: color,
+            strokeWidth: field.strokeWidth ?? 2,
+            cornerRadius: 3,
+          }),
+        );
+        if (isCheckboxChecked(rawValue)) {
+          group.add(
+            new Konva.Line({
+              points: checkPoints,
+              stroke: color,
+              strokeWidth: Math.max(2, boxSize * 0.12),
+              lineCap: 'round',
+              lineJoin: 'round',
+            }),
+          );
+        }
+        group.add(
+          new Konva.Text({
+            x: boxSize + gap,
+            width: labelWidth,
+            height,
+            text: computed.text !== undefined ? String(computed.text) : field.label,
+            fontSize,
+            fontFamily: field.fontFamily || 'Arial',
+            fill: color,
+            align: field.align || 'left',
+            verticalAlign: 'middle',
+            lineHeight: field.lineHeight,
+            letterSpacing: field.letterSpacing,
+            stroke: field.stroke,
+            strokeWidth: field.strokeWidth,
+          }),
+        );
+        layer.add(group);
         continue;
       }
 

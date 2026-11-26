@@ -1,8 +1,9 @@
 import React, { useRef, useEffect } from 'react';
-import { Rect, Text, Image as KonvaImage, Group, Transformer } from 'react-konva';
+import { Rect, Text, Image as KonvaImage, Group, Line, Transformer } from 'react-konva';
 import Konva from 'konva';
-import { ResolvedCardStyle, TemplateField } from '../types/template';
+import { isCheckboxChecked, ResolvedCardStyle, TemplateField } from '../types/template';
 import { evaluateFieldScript } from '../utils/scriptEvaluator';
+import { getCheckboxGeometry } from '../utils/checkbox';
 import { useImage } from '../hooks/useImage';
 import { RichTextNode } from './RichTextNode';
 
@@ -76,6 +77,11 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
   if (computed.text !== undefined) {
     displayText = computed.text;
   }
+
+  const { boxSize, gap, labelWidth, checkPoints } = getCheckboxGeometry(
+    effectiveWidth,
+    effectiveHeight,
+  );
 
   // Image loading for image fields. Linked images must keep one source, so a
   // per-field script cannot override `src` for a member of a link group.
@@ -184,6 +190,59 @@ export const DraggableFieldNode: React.FC<DraggableNodeProps> = ({
           onDragEnd={(e) => onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })}
           onTransformEnd={handleTransformEnd}
         />
+      )}
+
+      {field.type === 'checkbox' && (
+        <Group
+          name="template-field"
+          ref={shapeRef}
+          x={effectiveX}
+          y={effectiveY}
+          width={effectiveWidth}
+          height={effectiveHeight}
+          rotation={effectiveRotation}
+          scaleX={effectiveFlipX ? -1 : 1}
+          scaleY={effectiveFlipY ? -1 : 1}
+          opacity={effectiveOpacity}
+          draggable={isDesignMode && !scriptControlsPosition}
+          onClick={onSelect}
+          onTap={onSelect}
+          onDragEnd={(e) => onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })}
+          onTransformEnd={handleTransformEnd}
+        >
+          <Rect
+            width={boxSize}
+            height={boxSize}
+            fill={effectiveFill}
+            stroke={effectiveColor}
+            strokeWidth={field.strokeWidth ?? 2}
+            cornerRadius={3}
+          />
+          {isCheckboxChecked(rawValue) && (
+            <Line
+              points={checkPoints}
+              stroke={effectiveColor}
+              strokeWidth={Math.max(2, boxSize * 0.12)}
+              lineCap="round"
+              lineJoin="round"
+            />
+          )}
+          <Text
+            x={boxSize + gap}
+            width={labelWidth}
+            height={effectiveHeight}
+            text={computed.text !== undefined ? String(computed.text) : field.label}
+            fontSize={effectiveFontSize}
+            fontFamily={effectiveFontFamily}
+            fill={effectiveColor}
+            align={field.align || 'left'}
+            verticalAlign="middle"
+            lineHeight={field.lineHeight}
+            letterSpacing={field.letterSpacing}
+            stroke={field.stroke}
+            strokeWidth={field.strokeWidth}
+          />
+        </Group>
       )}
 
       {(field.type === 'text' || field.type === 'select') && (
