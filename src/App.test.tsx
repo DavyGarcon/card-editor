@@ -548,6 +548,42 @@ describe('App integration', () => {
     expect(cardToggle).not.toBeChecked();
   });
 
+  it('opens the preview at a zoom that shows the whole default card', () => {
+    const widthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    const heightSpy = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    try {
+      render(<App />);
+      const stage = screen.getByTestId('stage');
+      // The default JDR Pack style is 3230x2280, so it must be scaled down to
+      // fit the scroll area's 768x568 content box (16px padding on each side).
+      expect(Number(stage.getAttribute('data-stage-width'))).toBeLessThanOrEqual(768.01);
+      expect(Number(stage.getAttribute('data-stage-height'))).toBeLessThanOrEqual(568.01);
+      expect(screen.getByRole('spinbutton', { name: 'Zoom (%)' })).toHaveValue(24);
+    } finally {
+      widthSpy.mockRestore();
+      heightSpy.mockRestore();
+    }
+  });
+
+  it('keeps a manually chosen zoom instead of re-fitting on resize', () => {
+    const widthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    const heightSpy = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    try {
+      render(<App />);
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Zoom (%)' }), {
+        target: { value: '50' },
+      });
+      expect(screen.getByTestId('stage')).toHaveAttribute('data-stage-scale-x', '0.5');
+
+      // No ResizeObserver in jsdom, but a re-render must not restore the fit.
+      fireEvent.click(screen.getByRole('button', { name: 'Template' }));
+      expect(screen.getByTestId('stage')).toHaveAttribute('data-stage-scale-x', '0.5');
+    } finally {
+      widthSpy.mockRestore();
+      heightSpy.mockRestore();
+    }
+  });
+
   it('scales the whole card instead of clipping it when zoomed out', () => {
     render(<App />);
     loadBuiltInTemplate('examplePack');

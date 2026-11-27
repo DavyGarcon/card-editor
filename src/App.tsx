@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useLayoutEffect, useCallback } from 'react';
 import { Stage, Layer, Rect } from 'react-konva';
 import Konva from 'konva';
 import {
@@ -68,6 +68,7 @@ import { useUndoableDocument, type DocumentSnapshot } from './hooks/useUndoableD
 import { BUILT_IN_TEMPLATES, EMPTY_PACK } from './data';
 import { STRINGS } from './i18n/strings';
 import { clampNumber } from './utils/numbers';
+import { computeFitZoom } from './utils/zoom';
 import {
   getImageLinkDescendants,
   getImageLinkGroups,
@@ -83,6 +84,9 @@ import {
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2;
+const MIN_FIT_ZOOM = 0.01;
+// Matches the padding of `.stage-scroll` in index.css.
+const STAGE_SCROLL_PADDING = 16;
 
 /** Applies a field edit to the active style, creating a local override if needed. */
 function applyFieldUpdates(
@@ -164,6 +168,7 @@ export default function App() {
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [dismissedStyleError, setDismissedStyleError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [fitVersion, setFitVersion] = useState(0);
   const [showScriptHelp, setShowScriptHelp] = useState(false);
   const [fieldIdDraftState, setFieldIdDraftState] = useState<{ id: string; value: string }>({
     id: '',
@@ -180,6 +185,11 @@ export default function App() {
   } | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const zoomSetByUserRef = useRef(false);
+  // A fit zoom below 25% lowers the usable minimum so the zoom controls never
+  // show an out-of-range value while the whole card is visible.
+  const minZoom = Math.min(MIN_ZOOM, zoom);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -187,15 +197,16 @@ export default function App() {
     const onWheel = (event: WheelEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
       event.preventDefault();
+      zoomSetByUserRef.current = true;
       setZoom((previous) => {
         const factor = event.deltaY < 0 ? 1.1 : 0.9;
         const next = previous * factor;
-        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(next * 100) / 100));
+        return Math.min(MAX_ZOOM, Math.max(minZoom, Math.round(next * 100) / 100));
       });
     };
     viewport.addEventListener('wheel', onWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [minZoom]);
 
   // Autosave on every document mutation: pack/styles/fields, cards/deck, and
   // the active selections. Image refs stay in IndexedDB, so this is cheap.
@@ -236,6 +247,54 @@ export default function App() {
     }
   }, [currentStyleKey, pack.styles]);
   const resolvedStyle = styleResolution.style;
+
+  // The preview opens at the scale that shows the whole active card. Manual
+  // zooms are kept until the card/template changes; then fitting is automatic
+  // again.
+  const fitZoomToCard = useCallback(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const fitted = computeFitZoom(
+      resolvedStyle.width,
+      resolvedStyle.height,
+      scroll.clientWidth,
+      scroll.clientHeight,
+      STAGE_SCROLL_PADDING,
+    );
+    if (fitted === null) return;
+    setZoom(Math.min(MAX_ZOOM, Math.max(MIN_FIT_ZOOM, fitted)));
+  }, [resolvedStyle.width, resolvedStyle.height]);
+
+  const requestZoomFit = useCallback(() => {
+    zoomSetByUserRef.current = false;
+    setFitVersion((version) => version + 1);
+  }, []);
+
+  // Layout effect: set the initial/default zoom before the browser paints.
+  useLayoutEffect(() => {
+    if (zoomSetByUserRef.current) return;
+    fitZoomToCard();
+  }, [fitZoomToCard, fitVersion]);
+
+  // Keep the card fitted when the preview is resized, unless the user zoomed.
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!zoomSetByUserRef.current) fitZoomToCard();
+    });
+    observer.observe(scroll);
+    return () => observer.disconnect();
+  }, [fitZoomToCard]);
+
+  const zoomContextRef = useRef({ cardId: activeCardId, styleKey: currentStyleKey });
+  useEffect(() => {
+    const previous = zoomContextRef.current;
+    if (previous.cardId === activeCardId && previous.styleKey === currentStyleKey) return;
+    zoomContextRef.current = { cardId: activeCardId, styleKey: currentStyleKey };
+    requestZoomFit();
+  }, [activeCardId, currentStyleKey, requestZoomFit]);
+
   // Print size follows the active template and the DPI chosen in the PDF dialog.
   const exportedCardWidthMm = templateWidthToMm(resolvedStyle.width, pdfOptions.dpi);
   // Mixed-style decks print each card at the width of its own resolved style.
@@ -353,13 +412,14 @@ export default function App() {
         mode,
       });
       setActiveTemplateId(templateId);
+      requestZoomFit();
       showError(
         incompatibleCount > 0
           ? `${incompatibleCount} carte(s) ont été réassignée(s) au style « ${fallbackKey} » (style absent du nouveau template).`
           : null,
       );
     },
-    [cards, activeCardId, selectedFieldId, mode, setDocument, showError],
+    [cards, activeCardId, selectedFieldId, mode, setDocument, showError, requestZoomFit],
   );
 
   const templateFontNames = useMemo(
@@ -1053,6 +1113,7 @@ export default function App() {
             selectedFieldId && allFieldIds.has(selectedFieldId) ? selectedFieldId : null,
           mode: session.mode,
         });
+        requestZoomFit();
         showError(
           incompatibleCount > 0
             ? `${incompatibleCount} carte(s) ont été réassignée(s) au style « ${fallbackKey} » (style absent du nouveau template).`
@@ -1062,7 +1123,7 @@ export default function App() {
         showError(err instanceof Error ? err.message : 'Fichier template invalide.');
       }
     },
-    [cards, activeCardId, selectedFieldId, setDocument, showError],
+    [cards, activeCardId, selectedFieldId, setDocument, showError, requestZoomFit],
   );
 
   const saveDeck = useCallback(async () => {
@@ -1094,6 +1155,7 @@ export default function App() {
           activeCardId: nextCardId,
           activeStyleKey: remappedCards.find((c) => c.id === nextCardId)?.styleKey ?? fallbackKey,
         });
+        requestZoomFit();
         showError(
           incompatibleCount > 0
             ? `${incompatibleCount} carte(s) utilisaient un style inconnu et ont été réassignée(s) à « ${fallbackKey} ».`
@@ -1103,7 +1165,7 @@ export default function App() {
         showError(err instanceof Error ? err.message : 'Fichier deck invalide.');
       }
     },
-    [pack.styles, currentStyleKey, snapshot, setDocument, showError],
+    [pack.styles, currentStyleKey, snapshot, setDocument, showError, requestZoomFit],
   );
 
   const resetWorkspace = () => {
@@ -1119,6 +1181,7 @@ export default function App() {
       mode: 'card',
     });
     setActiveTemplateId(BUILT_IN_TEMPLATES[0]?.id ?? '');
+    requestZoomFit();
     setDismissedStyleError(null);
     setScriptErrors({});
     setGuides([]);
@@ -1555,15 +1618,24 @@ export default function App() {
         <div className="stage-toolbar">
           <ZoomToolbar
             zoom={zoom}
-            minZoom={MIN_ZOOM}
+            minZoom={minZoom}
             maxZoom={MAX_ZOOM}
-            onZoomOut={() => setZoom((z) => Math.max(MIN_ZOOM, Math.round(z * 0.9 * 100) / 100))}
-            onZoomIn={() => setZoom((z) => Math.min(MAX_ZOOM, Math.round(z * 1.1 * 100) / 100))}
-            onZoomChange={setZoom}
+            onZoomOut={() => {
+              zoomSetByUserRef.current = true;
+              setZoom((z) => Math.max(minZoom, Math.round(z * 0.9 * 100) / 100));
+            }}
+            onZoomIn={() => {
+              zoomSetByUserRef.current = true;
+              setZoom((z) => Math.min(MAX_ZOOM, Math.round(z * 1.1 * 100) / 100));
+            }}
+            onZoomChange={(value) => {
+              zoomSetByUserRef.current = true;
+              setZoom(value);
+            }}
           />
         </div>
 
-        <div className="stage-scroll">
+        <div className="stage-scroll" ref={scrollRef}>
           <ErrorBoundary
             fallbackTitle="Erreur de rendu du canevas"
             resetKey={boundaryKey}
