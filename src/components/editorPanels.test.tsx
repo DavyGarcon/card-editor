@@ -21,6 +21,7 @@ describe('ZoomToolbar', () => {
     const onZoomIn = vi.fn();
     const onZoomOut = vi.fn();
     const onZoomChange = vi.fn();
+    const onFit = vi.fn();
     const { rerender } = render(
       <ZoomToolbar
         zoom={1}
@@ -29,12 +30,20 @@ describe('ZoomToolbar', () => {
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
         onZoomChange={onZoomChange}
+        onFit={onFit}
       />,
     );
     expect(screen.getByRole('spinbutton', { name: STRINGS.zoomLevel })).toHaveValue(100);
     expect(screen.queryByRole('button', { name: '100%' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: STRINGS.zoomIn }));
     expect(onZoomIn).toHaveBeenCalledTimes(1);
+
+    const fitButton = screen.getByRole('button', { name: STRINGS.zoomFit });
+    expect(fitButton.previousElementSibling).toBe(
+      screen.getByRole('button', { name: STRINGS.zoomIn }),
+    );
+    fireEvent.click(fitButton);
+    expect(onFit).toHaveBeenCalledTimes(1);
 
     rerender(
       <ZoomToolbar
@@ -44,6 +53,7 @@ describe('ZoomToolbar', () => {
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
         onZoomChange={onZoomChange}
+        onFit={onFit}
       />,
     );
     expect(screen.getByRole('button', { name: STRINGS.zoomOut })).toBeDisabled();
@@ -60,6 +70,7 @@ describe('ZoomToolbar', () => {
         onZoomIn={vi.fn()}
         onZoomOut={vi.fn()}
         onZoomChange={onZoomChange}
+        onFit={vi.fn()}
       />,
     );
     const input = screen.getByRole('spinbutton', { name: STRINGS.zoomLevel });

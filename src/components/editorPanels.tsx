@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertCircle, HelpCircle, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertCircle, HelpCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { STRINGS } from '../i18n/strings';
 import { clampNumber } from '../utils/numbers';
 import { PAPER_FORMATS, type PaperOrientation, type PaperSize } from '../utils/paperFormats';
@@ -60,6 +60,7 @@ export interface ZoomToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomChange: (zoom: number) => void;
+  onFit: () => void;
 }
 
 export function ZoomToolbar({
@@ -69,6 +70,7 @@ export function ZoomToolbar({
   onZoomIn,
   onZoomOut,
   onZoomChange,
+  onFit,
 }: ZoomToolbarProps) {
   // `draft` is only set while the user is typing; otherwise the value is
   // derived from the zoom prop so external zoom changes stay in sync.
@@ -135,6 +137,17 @@ export function ZoomToolbar({
         className="io-button"
       >
         <ZoomIn size={15} />
+      </button>
+      <button
+        onClick={() => {
+          setDraft(null);
+          onFit();
+        }}
+        title={STRINGS.zoomFit}
+        aria-label={STRINGS.zoomFit}
+        className="io-button"
+      >
+        <Maximize2 size={15} />
       </button>
     </div>
   );

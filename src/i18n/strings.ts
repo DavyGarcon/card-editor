@@ -68,6 +68,7 @@ export const STRINGS = {
   zoomIn: 'Zoom avant',
   zoomOut: 'Zoom arrière',
   zoomLevel: 'Zoom (%)',
+  zoomFit: 'Ajuster',
   closeMessage: "Fermer le message d'erreur",
   newCard: 'Nouvelle Carte',
   untitled: 'Sans titre',

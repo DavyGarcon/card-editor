@@ -584,6 +584,26 @@ describe('App integration', () => {
     }
   });
 
+  it('restores the fit-to-view zoom from the toolbar button', () => {
+    const widthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    const heightSpy = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    try {
+      render(<App />);
+      const zoomField = screen.getByRole('spinbutton', { name: 'Zoom (%)' });
+      fireEvent.change(zoomField, { target: { value: '50' } });
+      expect(screen.getByTestId('stage')).toHaveAttribute('data-stage-scale-x', '0.5');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Ajuster' }));
+      expect(zoomField).toHaveValue(24);
+      const stage = screen.getByTestId('stage');
+      expect(Number(stage.getAttribute('data-stage-width'))).toBeLessThanOrEqual(768.01);
+      expect(Number(stage.getAttribute('data-stage-height'))).toBeLessThanOrEqual(568.01);
+    } finally {
+      widthSpy.mockRestore();
+      heightSpy.mockRestore();
+    }
+  });
+
   it('scales the whole card instead of clipping it when zoomed out', () => {
     render(<App />);
     loadBuiltInTemplate('examplePack');

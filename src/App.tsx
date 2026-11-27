@@ -1632,6 +1632,7 @@ export default function App() {
               zoomSetByUserRef.current = true;
               setZoom(value);
             }}
+            onFit={requestZoomFit}
           />
         </div>
 
